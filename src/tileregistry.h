@@ -1,0 +1,101 @@
+#pragma once
+
+#include <QDir>
+#include <QFile>
+#include <QIODevice>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QObject>
+#include <QStandardPaths>
+#include <QUrl>
+#include <QVariantList>
+#include <QVariantMap>
+
+// 磁贴注册表：磁贴即插件。
+//   内置磁贴位于 qrc:/tiles/<type>/（manifest.json + Tile.qml），
+//   用户磁贴位于 AppDataLocation/tiles/<type>/，同名类型覆盖内置——
+//   往用户目录丢一个文件夹就是一枚新磁贴，无需重编译。
+//   manifest 字段：name（显示名）、category（添加菜单分组）、
+//   size:[w,h]（默认尺寸）、icon（kenney 名，或完整 image://icons id）。
+class TileRegistry : public QObject {
+    Q_OBJECT
+public:
+    explicit TileRegistry(QObject *parent = nullptr)
+        : QObject(parent)
+    {
+        rescan();
+    }
+
+    // 添加菜单数据源：[{type,name,category,w,h,icon}]，已按固定分类排序
+    Q_INVOKABLE QVariantList kinds() const { return m_kinds; }
+
+    // addTile 取默认尺寸/名称；未知类型返回空表
+    Q_INVOKABLE QVariantMap kind(const QString &type) const
+    {
+        return m_byType.value(type).toMap();
+    }
+
+    Q_INVOKABLE QUrl source(const QString &type) const
+    {
+        return m_sources.value(type).value<QUrl>();
+    }
+
+private:
+    void rescan()
+    {
+        const QString userRoot =
+            QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+            + QStringLiteral("/tiles");
+        QStringList roots { QStringLiteral(":/tiles") };
+        if (QDir(userRoot).exists())
+            roots << userRoot;
+
+        for (const QString &root : roots) {
+            const QDir dir(root);
+            for (const QString &t : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+                QFile f(dir.filePath(t + QStringLiteral("/manifest.json")));
+                if (!f.open(QIODevice::ReadOnly))
+                    continue;
+                const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
+                const QJsonArray sz = o.value(QStringLiteral("size")).toArray();
+                QVariantMap m;
+                m.insert(QStringLiteral("type"), t);
+                m.insert(QStringLiteral("name"),
+                         o.value(QStringLiteral("name")).toString(t));
+                m.insert(QStringLiteral("category"),
+                         o.value(QStringLiteral("category")).toString(QStringLiteral("工具")));
+                m.insert(QStringLiteral("w"), sz.at(0).toInt(1));
+                m.insert(QStringLiteral("h"), sz.at(1).toInt(1));
+                m.insert(QStringLiteral("icon"), o.value(QStringLiteral("icon")).toString());
+                m_byType.insert(t, m);
+                // 内置走 qrc，用户目录走本地文件
+                m_sources.insert(t, root.startsWith(QStringLiteral(":"))
+                        ? QUrl(QStringLiteral("qrc") + root + QStringLiteral("/")
+                               + t + QStringLiteral("/Tile.qml"))
+                        : QUrl::fromLocalFile(dir.filePath(t + QStringLiteral("/Tile.qml"))));
+            }
+        }
+
+        // 固定分类顺序，未知分类排其后
+        const QStringList order {
+            QStringLiteral("信息"), QStringLiteral("应用"), QStringLiteral("工具")
+        };
+        for (const QString &cat : order) {
+            for (auto it = m_byType.constBegin(); it != m_byType.constEnd(); ++it) {
+                const QVariantMap m = it.value().toMap();
+                if (m.value(QStringLiteral("category")) == cat)
+                    m_kinds.append(m);
+            }
+        }
+        for (auto it = m_byType.constBegin(); it != m_byType.constEnd(); ++it) {
+            const QVariantMap m = it.value().toMap();
+            if (!order.contains(m.value(QStringLiteral("category")).toString()))
+                m_kinds.append(m);
+        }
+    }
+
+    QVariantMap m_byType;
+    QVariantMap m_sources;
+    QVariantList m_kinds;
+};

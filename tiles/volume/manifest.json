@@ -1,0 +1,10 @@
+{
+  "name": "音量",
+  "category": "信息",
+  "size": [
+    2,
+    1
+  ],
+  "icon": "audioOn",
+  "api": 1
+}

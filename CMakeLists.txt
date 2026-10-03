@@ -17,11 +17,18 @@ qt_add_executable(ruthis
     src/tilestore.h
     src/sysinfo.h
     src/iconprovider.h
+    src/tileregistry.h
     src/windowsbridge.h
 )
 
 qt_add_resources(ruthis "qml" PREFIX "/" FILES src/Main.qml)
 qt_add_resources(ruthis "kwin" PREFIX "/" FILES kwin/kwin-windows.js)
+
+# 磁贴即插件：tiles/<type>/manifest.json + Tile.qml，编译期嵌入
+file(GLOB TILE_PLUGIN_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+    tiles/*/manifest.json
+    tiles/*/Tile.qml)
+qt_add_resources(ruthis "tiles" PREFIX "/" FILES ${TILE_PLUGIN_FILES})
 
 # kenney CC0 图标包随仓库分发，编译期嵌入二进制（assets/kenney/{White,Black}/*.png）
 file(GLOB KENNEY_ICONS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}

@@ -1,0 +1,10 @@
+{
+  "name": "系统",
+  "category": "信息",
+  "size": [
+    2,
+    2
+  ],
+  "icon": "barsVertical",
+  "api": 1
+}

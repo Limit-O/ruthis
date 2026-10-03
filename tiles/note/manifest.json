@@ -1,0 +1,10 @@
+{
+  "name": "便签",
+  "category": "工具",
+  "size": [
+    2,
+    2
+  ],
+  "icon": "menuList",
+  "api": 1
+}

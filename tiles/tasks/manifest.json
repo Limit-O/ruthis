@@ -1,0 +1,10 @@
+{
+  "name": "后台",
+  "category": "应用",
+  "size": [
+    2,
+    3
+  ],
+  "icon": "menuGrid",
+  "api": 1
+}

@@ -1,0 +1,10 @@
+{
+  "name": "媒体",
+  "category": "信息",
+  "size": [
+    2,
+    2
+  ],
+  "icon": "musicOn",
+  "api": 1
+}

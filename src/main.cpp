@@ -15,6 +15,7 @@
 #include "mediainfo.h"
 #include "sysinfo.h"
 #include "tilestore.h"
+#include "tileregistry.h"
 #include "windowsbridge.h"
 
 int main(int argc, char *argv[])
@@ -65,6 +66,7 @@ int main(int argc, char *argv[])
     WindowsBridge bridge;
     MediaInfo mediaInfo;
     AudioInfo audioInfo;
+    TileRegistry tileRegistry;
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);
     view.rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
@@ -72,6 +74,7 @@ int main(int argc, char *argv[])
     view.rootContext()->setContextProperty(QStringLiteral("Bridge"), &bridge);
     view.rootContext()->setContextProperty(QStringLiteral("Media"), &mediaInfo);
     view.rootContext()->setContextProperty(QStringLiteral("Audio"), &audioInfo);
+    view.rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
 
@@ -102,13 +105,20 @@ int main(int argc, char *argv[])
             QStringLiteral(RUTHIS_SOURCE_DIR) + QStringLiteral("/src/Main.qml");
         auto *watcher = new QFileSystemWatcher(&app);
         watcher->addPath(qmlPath);
+        // 磁贴插件目录也在监视范围内
+        const QDir tilesDir(QStringLiteral(RUTHIS_SOURCE_DIR) + QStringLiteral("/tiles"));
+        for (const QString &sub : tilesDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+            const QString tqml = tilesDir.filePath(sub + QStringLiteral("/Tile.qml"));
+            if (QFile::exists(tqml))
+                watcher->addPath(tqml);
+        }
         QObject::connect(watcher, &QFileSystemWatcher::fileChanged, &app,
-                         [&view, &app, qmlPath]() {
+                         [&view, &app, qmlPath](const QString &path) {
                              view.engine()->clearComponentCache();
                              view.setSource(QUrl::fromLocalFile(qmlPath));
                              QFileSystemWatcher *w = app.findChild<QFileSystemWatcher *>();
-                             if (w && w->files().isEmpty())
-                                 w->addPath(qmlPath);
+                             if (w && !w->files().contains(path))
+                                 w->addPath(path);
                          });
     }
 

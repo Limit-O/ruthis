@@ -1,0 +1,10 @@
+{
+  "name": "电池",
+  "category": "信息",
+  "size": [
+    2,
+    1
+  ],
+  "icon": "power",
+  "api": 1
+}
