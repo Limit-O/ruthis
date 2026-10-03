@@ -11,7 +11,9 @@ find_package(LayerShellQt REQUIRED)
 qt_add_executable(ruthis
     src/main.cpp
     src/applist.h
+    src/audioinfo.h
     src/launcher.h
+    src/mediainfo.h
     src/tilestore.h
     src/sysinfo.h
     src/iconprovider.h
@@ -27,4 +29,8 @@ target_link_libraries(ruthis PRIVATE
     Qt6::Quick
     Qt6::DBus
     LayerShellQt::Interface
+)
+
+target_compile_definitions(ruthis PRIVATE
+    RUTHIS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
 )

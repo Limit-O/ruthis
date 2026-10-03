@@ -189,16 +189,21 @@ Item {
 
             // ---- 系统 ----
             Item {
+                id: sysTile
                 anchors.fill: parent
                 anchors.margins: 12
                 visible: model.type === "sys"
 
                 property string uptimeStr: "—"
-                property string memStr: "—"
+                property string cpuMemStr: "—"
+                property string netStr: "—"
+                property string diskStr: "—"
 
                 function refresh() {
                     uptimeStr = SysInfo.uptimeString()
-                    memStr = SysInfo.memoryString()
+                    cpuMemStr = "CPU " + SysInfo.cpuPercent() + " % · " + SysInfo.memoryString()
+                    netStr = SysInfo.netSpeedString()
+                    diskStr = SysInfo.diskString()
                 }
 
                 Timer { interval: 2000; running: true; repeat: true; onTriggered: parent.refresh() }
@@ -207,18 +212,189 @@ Item {
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.left: parent.left
-                    spacing: 7
+                    spacing: 6
                     Text {
                         text: "Linux " + SysInfo.kernelVersion()
-                        color: root.tileFg; opacity: 0.6; font.pixelSize: 13
+                        color: root.tileFg; opacity: 0.55; font.pixelSize: 12
                     }
                     Text {
-                        text: parent.parent.uptimeStr
-                        color: root.tileFg; font.pixelSize: 18; font.weight: Font.Medium
+                        text: sysTile.uptimeStr
+                        color: root.tileFg; font.pixelSize: 16; font.weight: Font.Medium
                     }
                     Text {
-                        text: parent.parent.memStr
-                        color: root.tileFg; opacity: 0.8; font.pixelSize: 14
+                        text: sysTile.cpuMemStr
+                        color: root.tileFg; opacity: 0.85; font.pixelSize: 13
+                    }
+                    Text {
+                        text: sysTile.netStr
+                        color: root.tileFg; opacity: 0.85; font.pixelSize: 13
+                    }
+                    Text {
+                        text: sysTile.diskStr
+                        color: root.tileFg; opacity: 0.85; font.pixelSize: 13
+                    }
+                }
+            }
+
+            // ---- 媒体（MPRIS 播放器）----
+            Item {
+                id: mediaTile
+                anchors.fill: parent
+                anchors.margins: 12
+                visible: model.type === "media"
+
+                Text {
+                    visible: !Media.available
+                    anchors.centerIn: parent
+                    text: "无正在播放的媒体"
+                    color: root.tileFg; opacity: 0.45; font.pixelSize: 13
+                }
+
+                Column {
+                    visible: Media.available
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 3
+
+                    Text {
+                        text: Media.playing ? "正在播放" : "已暂停"
+                        color: root.tileFg; opacity: 0.5; font.pixelSize: 11
+                    }
+                    Text {
+                        width: parent.width
+                        text: Media.title
+                        color: root.tileFg; font.pixelSize: 17; font.weight: Font.Medium
+                        elide: Text.ElideRight
+                    }
+                    Text {
+                        width: parent.width
+                        text: Media.artist === "" ? Media.player
+                                                  : Media.artist + " · " + Media.player
+                        color: root.tileFg; opacity: 0.7; font.pixelSize: 13
+                        elide: Text.ElideRight
+                    }
+                    Row {
+                        spacing: 24
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        Item {
+                            width: 34; height: 36
+                            Text { anchors.centerIn: parent; text: "⏮"; color: root.tileFg; opacity: 0.85; font.pixelSize: 19 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Media.previous() }
+                        }
+                        Item {
+                            width: 40; height: 40
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 40; height: 40; radius: 20
+                                color: "#22ffffff"
+                                border.width: 1; border.color: "#3bffffff"
+                            }
+                            Text { anchors.centerIn: parent; text: Media.playing ? "⏸" : "▶"; color: root.tileFg; font.pixelSize: 17 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Media.toggle() }
+                        }
+                        Item {
+                            width: 34; height: 36
+                            Text { anchors.centerIn: parent; text: "⏭"; color: root.tileFg; opacity: 0.85; font.pixelSize: 19 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Media.next() }
+                        }
+                    }
+                }
+            }
+
+            // ---- 音量（默认输出设备）----
+            Item {
+                id: volTile
+                anchors.fill: parent
+                anchors.margins: 12
+                visible: model.type === "volume"
+
+                Column {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 5
+
+                    Row {
+                        spacing: 10
+                        Item {
+                            width: 24; height: 24
+                            Text { anchors.centerIn: parent; text: Audio.muted ? "🔇" : "🔊"; font.pixelSize: 15 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Audio.toggleMute() }
+                        }
+                        Text {
+                            text: Audio.muted ? "已静音" : (Audio.volume + " %")
+                            color: root.tileFg; opacity: 0.85; font.pixelSize: 14
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    GlassSlider {
+                        width: parent.width
+                        from: 0; to: 100; stepSize: 1
+                        value: Audio.volume
+                        onMoved: Audio.setVolume(value)
+                    }
+                }
+            }
+
+            // ---- 电池 ----
+            Item {
+                id: battTile
+                anchors.fill: parent
+                anchors.margins: 12
+                visible: model.type === "battery"
+
+                property bool has: false
+                property int pct: -1
+                property string st: "—"
+
+                function refresh() {
+                    has = SysInfo.hasBattery()
+                    pct = SysInfo.batteryPercent()
+                    st = SysInfo.batteryStatus()
+                }
+                Timer { interval: 5000; running: true; repeat: true; onTriggered: parent.refresh() }
+                Component.onCompleted: refresh()
+
+                Text {
+                    visible: !battTile.has
+                    anchors.centerIn: parent
+                    text: "未检测到电池"
+                    color: root.tileFg; opacity: 0.45; font.pixelSize: 13
+                }
+
+                Column {
+                    visible: battTile.has
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 7
+
+                    Row {
+                        spacing: 10
+                        Text { text: "🔋"; font.pixelSize: 19; anchors.verticalCenter: parent.verticalCenter }
+                        Text {
+                            text: battTile.pct >= 0 ? battTile.pct + " %" : "—"
+                            color: root.tileFg; font.pixelSize: 19; font.weight: Font.Medium
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: battTile.st
+                            color: root.tileFg; opacity: 0.7; font.pixelSize: 12
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                    Rectangle {
+                        width: parent.width
+                        height: 6
+                        radius: 3
+                        color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b, 0.25)
+                        Rectangle {
+                            width: parent.width * Math.max(0, Math.min(100, battTile.pct)) / 100
+                            height: parent.height
+                            radius: 3
+                            color: battTile.pct <= 20 && battTile.st === "放电中" ? "#ff7b72" : "#7fd0ff"
+                        }
                     }
                 }
             }
@@ -423,12 +599,12 @@ Item {
 
             MouseArea {
                 id: dragArea
-                // 不锚定 bottom，height 才能生效：便签只热区顶部 36px，
-                // 正文区域留给 TextEdit 接收点击和键盘
+                // 不锚定 bottom，height 才能生效：便签/媒体/音量只热区顶部 36px，
+                // 其余区域留给磁贴自身的输入控件（文本框/播放控制/音量条）
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.right: parent.right
-                height: model.type === "note" ? 36 : parent.height
+                height: model.type === "note" || model.type === "media" || model.type === "volume" ? 36 : parent.height
                 hoverEnabled: true
                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -697,6 +873,9 @@ Item {
                         { type: "tasks", label: "后台" },
                         { type: "clock", label: "时钟" },
                         { type: "sys", label: "系统" },
+                        { type: "media", label: "媒体" },
+                        { type: "volume", label: "音量" },
+                        { type: "battery", label: "电池" },
                         { type: "settings", label: "设置" }
                     ]
                     delegate: GlassButton {
@@ -1022,7 +1201,7 @@ Item {
     function defaultTiles() {
         return [
             { type: "clock", cx: 1, cy: 1, cw: 3, ch: 2, text: "", glyph: "", label: "", command: "", icon: "" },
-            { type: "sys", cx: 4, cy: 1, cw: 2, ch: 1, text: "", glyph: "", label: "", command: "", icon: "" },
+            { type: "sys", cx: 4, cy: 1, cw: 2, ch: 2, text: "", glyph: "", label: "", command: "", icon: "" },
             { type: "note", cx: 4, cy: 2, cw: 2, ch: 2,
               text: "☐ 补完系统升级\n☐ 验证新登录器\n☐ 剪第一条视频", glyph: "", label: "", command: "", icon: "" },
             { type: "app", cx: 1, cy: 3, cw: 1, ch: 1, glyph: "", label: "终端", command: "konsole", icon: "utilities-terminal" },
@@ -1045,7 +1224,10 @@ Item {
             app:      { w: 1, h: 1, text: "", glyph: "", label: "应用", command: "", icon: "" },
             tasks:    { w: 2, h: 3, text: "", glyph: "", label: "", command: "", icon: "" },
             clock:    { w: 3, h: 2, text: "", glyph: "", label: "", command: "", icon: "" },
-            sys:      { w: 2, h: 1, text: "", glyph: "", label: "", command: "", icon: "" },
+            sys:      { w: 2, h: 2, text: "", glyph: "", label: "", command: "", icon: "" },
+            media:    { w: 2, h: 2, text: "", glyph: "", label: "", command: "", icon: "" },
+            volume:   { w: 2, h: 1, text: "", glyph: "", label: "", command: "", icon: "" },
+            battery:  { w: 2, h: 1, text: "", glyph: "", label: "", command: "", icon: "" },
             settings: { w: 1, h: 1, text: "", glyph: "", label: "设置", command: "", icon: "" }
         }[type]
         if (!spec)

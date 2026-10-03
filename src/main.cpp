@@ -1,5 +1,6 @@
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFileSystemWatcher>
 #include <QGuiApplication>
 #include <QQmlContext>
 #include <QQuickView>
@@ -8,8 +9,10 @@
 #include <LayerShellQt/Window>
 
 #include "applist.h"
+#include "audioinfo.h"
 #include "iconprovider.h"
 #include "launcher.h"
+#include "mediainfo.h"
 #include "sysinfo.h"
 #include "tilestore.h"
 #include "windowsbridge.h"
@@ -36,6 +39,10 @@ int main(int argc, char *argv[])
         QStringLiteral("open-settings"),
         QStringLiteral("启动时打开设置面板（调试用）"));
     parser.addOption(openSettingsOption);
+    const QCommandLineOption devOption(
+        QStringLiteral("dev"),
+        QStringLiteral("从源码目录加载 QML，改动即热重载（开发用）"));
+    parser.addOption(devOption);
     parser.process(app);
     const bool desktopMode = parser.isSet(desktopOption);
 
@@ -52,11 +59,15 @@ int main(int argc, char *argv[])
     SysInfo sysInfo;
     AppList appList;
     WindowsBridge bridge;
+    MediaInfo mediaInfo;
+    AudioInfo audioInfo;
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);
     view.rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
     view.rootContext()->setContextProperty(QStringLiteral("Apps"), &appList);
     view.rootContext()->setContextProperty(QStringLiteral("Bridge"), &bridge);
+    view.rootContext()->setContextProperty(QStringLiteral("Media"), &mediaInfo);
+    view.rootContext()->setContextProperty(QStringLiteral("Audio"), &audioInfo);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
 
@@ -76,7 +87,26 @@ int main(int argc, char *argv[])
     // provider 必须先于 setSource 注册：QML 里同步加载的 image://icons/ 请求
     // 会在 setSource 创建场景的当场发出，晚注册会让图标全部静默加载失败
     view.engine()->addImageProvider(QStringLiteral("icons"), new IconProvider);
-    view.setSource(QUrl(QStringLiteral("qrc:/src/Main.qml")));
+    const QUrl source = parser.isSet(devOption)
+        ? QUrl::fromLocalFile(QStringLiteral(RUTHIS_SOURCE_DIR) + QStringLiteral("/src/Main.qml"))
+        : QUrl(QStringLiteral("qrc:/src/Main.qml"));
+    view.setSource(source);
+
+    if (parser.isSet(devOption)) {
+        // 热重载：编辑器常以"替换文件"方式保存，inode 会变，触发后要重新挂监视
+        const QString qmlPath =
+            QStringLiteral(RUTHIS_SOURCE_DIR) + QStringLiteral("/src/Main.qml");
+        auto *watcher = new QFileSystemWatcher(&app);
+        watcher->addPath(qmlPath);
+        QObject::connect(watcher, &QFileSystemWatcher::fileChanged, &app,
+                         [&view, &app, qmlPath]() {
+                             view.engine()->clearComponentCache();
+                             view.setSource(QUrl::fromLocalFile(qmlPath));
+                             QFileSystemWatcher *w = app.findChild<QFileSystemWatcher *>();
+                             if (w && w->files().isEmpty())
+                                 w->addPath(qmlPath);
+                         });
+    }
 
     if (desktopMode) {
         view.showFullScreen();
