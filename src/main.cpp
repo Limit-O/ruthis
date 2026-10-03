@@ -10,6 +10,7 @@
 #include "applist.h"
 #include "iconprovider.h"
 #include "launcher.h"
+#include "swaybridge.h"
 #include "sysinfo.h"
 #include "tilestore.h"
 #include "windowsbridge.h"
@@ -51,12 +52,18 @@ int main(int argc, char *argv[])
     TileStore store;
     SysInfo sysInfo;
     AppList appList;
-    WindowsBridge bridge;
+    // 窗口桥按会话环境二选一：sway/i3 会话走 i3 IPC，其余维持 KWin 脚本桥
+    SwayBridge swayBridge;
+    WindowsBridge kwinBridge;
+    const bool swaySession = !qEnvironmentVariableIsEmpty("SWAYSOCK")
+        || !qEnvironmentVariableIsEmpty("I3SOCK");
+    QObject *bridge = swaySession ? static_cast<QObject *>(&swayBridge)
+                                  : static_cast<QObject *>(&kwinBridge);
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);
     view.rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
     view.rootContext()->setContextProperty(QStringLiteral("Apps"), &appList);
-    view.rootContext()->setContextProperty(QStringLiteral("Bridge"), &bridge);
+    view.rootContext()->setContextProperty(QStringLiteral("Bridge"), bridge);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
 
