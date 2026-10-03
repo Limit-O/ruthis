@@ -41,6 +41,12 @@ public:
         return m_sources.value(type).value<QUrl>();
     }
 
+    // manifest.source 配置（声明式磁贴用），无则空表
+    Q_INVOKABLE QVariantMap sourceConfig(const QString &type) const
+    {
+        return m_sourceConf.value(type).toMap();
+    }
+
 private:
     void rescan()
     {
@@ -59,6 +65,12 @@ private:
                     continue;
                 const QJsonObject o = QJsonDocument::fromJson(f.readAll()).object();
                 const QJsonArray sz = o.value(QStringLiteral("size")).toArray();
+                const QVariantMap sourceConf =
+                    o.value(QStringLiteral("source")).toObject().toVariantMap();
+                const QString tileQml = dir.filePath(t + QStringLiteral("/Tile.qml"));
+                // 必须可渲染：自带 Tile.qml，或声明 source 走通用渲染器，否则不算磁贴
+                if (!QFile::exists(tileQml) && sourceConf.isEmpty())
+                    continue;
                 QVariantMap m;
                 m.insert(QStringLiteral("type"), t);
                 m.insert(QStringLiteral("name"),
@@ -68,12 +80,19 @@ private:
                 m.insert(QStringLiteral("w"), sz.at(0).toInt(1));
                 m.insert(QStringLiteral("h"), sz.at(1).toInt(1));
                 m.insert(QStringLiteral("icon"), o.value(QStringLiteral("icon")).toString());
+                m_sourceConf.insert(t, sourceConf);
                 m_byType.insert(t, m);
-                // 内置走 qrc，用户目录走本地文件
-                m_sources.insert(t, root.startsWith(QStringLiteral(":"))
+                QUrl src;
+                if (QFile::exists(tileQml)) {
+                    src = root.startsWith(QStringLiteral(":"))
                         ? QUrl(QStringLiteral("qrc") + root + QStringLiteral("/")
                                + t + QStringLiteral("/Tile.qml"))
-                        : QUrl::fromLocalFile(dir.filePath(t + QStringLiteral("/Tile.qml"))));
+                        : QUrl::fromLocalFile(tileQml);
+                } else {
+                    // 纯声明式磁贴：数据 + 渲染全在 manifest，渲染器由外壳提供
+                    src = QUrl(QStringLiteral("qrc:/tiles/_generic/Tile.qml"));
+                }
+                m_sources.insert(t, src);
             }
         }
 
@@ -97,5 +116,6 @@ private:
 
     QVariantMap m_byType;
     QVariantMap m_sources;
+    QVariantMap m_sourceConf;
     QVariantList m_kinds;
 };

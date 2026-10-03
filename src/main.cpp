@@ -10,6 +10,7 @@
 
 #include "applist.h"
 #include "audioinfo.h"
+#include "datasource.h"
 #include "iconprovider.h"
 #include "launcher.h"
 #include "mediainfo.h"
@@ -67,6 +68,7 @@ int main(int argc, char *argv[])
     MediaInfo mediaInfo;
     AudioInfo audioInfo;
     TileRegistry tileRegistry;
+    TileSources tileSources(&tileRegistry);
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);
     view.rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
@@ -75,6 +77,7 @@ int main(int argc, char *argv[])
     view.rootContext()->setContextProperty(QStringLiteral("Media"), &mediaInfo);
     view.rootContext()->setContextProperty(QStringLiteral("Audio"), &audioInfo);
     view.rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
+    view.rootContext()->setContextProperty(QStringLiteral("Sources"), &tileSources);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
 

@@ -227,6 +227,14 @@ Item {
                 value: cfg
                 when: tileHost.status === Loader.Ready
             }
+            // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
+            Binding {
+                target: tileHost.item
+                property: "ds"
+                value: Sources.forType(model.type)
+                when: tileHost.status === Loader.Ready && tileHost.item !== null
+                      && ("ds" in tileHost.item)
+            }
 
             MouseArea {
                 id: dragArea

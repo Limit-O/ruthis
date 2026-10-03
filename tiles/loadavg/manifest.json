@@ -1,0 +1,15 @@
+{
+  "name": "负载",
+  "category": "信息",
+  "size": [2, 1],
+  "icon": "barsHorizontal",
+  "api": 1,
+  "source": {
+    "type": "command",
+    "cmd": "cut -d ' ' -f1-3 /proc/loadavg",
+    "interval": 5
+  },
+  "render": {
+    "type": "text"
+  }
+}
