@@ -4,9 +4,12 @@
 #include <QImage>
 #include <QPixmap>
 #include <QQuickImageProvider>
+#include <QStandardPaths>
 #include <QUrl>
 
 // 图标路由：image://icons/<id>
+//   id 为 kenney/<色系>/<名>（如 kenney/White/gear）→ kenney 图标包（CC0，
+//     安装于 AppDataLocation/kenney/{White,Black}/*.png，黑白随卡片亮度由 QML 选）
 //   id 为图标主题名（如 utilities-terminal）→ 从已装图标主题取
 //   id 为本地文件路径（如 /home/x/icon.png）→ 直接加载用户自定义图标
 //   注意：QIcon 主题引擎非线程安全，QML 侧图标 Image 必须同步加载（勿设 asynchronous: true）
@@ -20,7 +23,10 @@ public:
         const QSize sz = requestedSize.isEmpty() ? QSize(64, 64) : requestedSize;
         QPixmap pm;
 
-        if (id.startsWith(QLatin1Char('/')) || id.startsWith(QStringLiteral("file://"))) {
+        if (id.startsWith(QStringLiteral("kenney/"))) {
+            pm = QPixmap::fromImage(QImage(kenneyRoot() + QStringLiteral("/")
+                                           + id.mid(7) + QStringLiteral(".png")));
+        } else if (id.startsWith(QLatin1Char('/')) || id.startsWith(QStringLiteral("file://"))) {
             QString path = id;
             if (path.startsWith(QStringLiteral("file://")))
                 path = QUrl(path).toLocalFile();
@@ -39,5 +45,12 @@ public:
         if (size)
             *size = pm.size();
         return pm;
+    }
+
+private:
+    static QString kenneyRoot()
+    {
+        return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+             + QStringLiteral("/icons/kenney");
     }
 };

@@ -16,12 +16,15 @@ Item {
     property string wallpaperUrl: ""
     property bool tilesHidden: false
 
-    // 磁贴文字颜色随卡片颜色自动取黑/白（按卡片与深色壁纸混合后的亮度）
-    readonly property color tileFg: {
+    function cardEffectiveLum() {
         const lum = 0.299 * cardColor.r + 0.587 * cardColor.g + 0.114 * cardColor.b
-        const eff = lum * tileOpacity + 0.03 * (1 - tileOpacity)
-        return eff > 0.5 ? "#151a22" : "#f4f7ff"
+        return lum * tileOpacity + 0.03 * (1 - tileOpacity)
     }
+
+    // 磁贴文字颜色随卡片颜色自动取黑/白（按卡片与深色壁纸混合后的亮度）
+    readonly property color tileFg: cardEffectiveLum() > 0.5 ? "#151a22" : "#f4f7ff"
+    // kenney 图标黑白两版随卡片亮度同步切换（暗底白图标，亮底黑图标）
+    readonly property string iconVariant: cardEffectiveLum() > 0.5 ? "Black" : "White"
 
     // ================= ruthis 自有风格控件 =================
     component GlassButton: Button {
@@ -75,6 +78,38 @@ Item {
             color: "#14ffffff"
             border.width: 1
             border.color: gtf.activeFocus ? "#667fd0ff" : "#2bffffff"
+        }
+    }
+
+    // 添加磁贴选择器的种类按钮：kenney 图标 + 文字
+    component TileKindButton: Button {
+        id: tkb
+        property string iconName: ""
+        property string labelText: ""
+        implicitWidth: 96
+        implicitHeight: 72
+        background: Rectangle {
+            color: tkb.pressed ? "#2effffff" : tkb.hovered ? "#24ffffff" : "#17ffffff"
+            radius: 6
+            border.width: 1
+            border.color: tkb.hovered ? "#337fd0ff" : "#2bffffff"
+        }
+        contentItem: Column {
+            spacing: 5
+            Image {
+                visible: tkb.iconName !== ""
+                source: tkb.iconName !== "" ? "image://icons/kenney/" + root.iconVariant + "/" + tkb.iconName : ""
+                width: 26; height: 26
+                sourceSize: Qt.size(52, 52)
+                fillMode: Image.PreserveAspectFit
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
+            Text {
+                text: tkb.labelText
+                color: "#f4f7ff"
+                font.pixelSize: 13
+                anchors.horizontalCenter: parent.horizontalCenter
+            }
         }
     }
 
@@ -257,9 +292,21 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 3
 
-                    Text {
-                        text: Media.playing ? "正在播放" : "已暂停"
-                        color: root.tileFg; opacity: 0.5; font.pixelSize: 11
+                    Row {
+                        spacing: 6
+                        Image {
+                            source: "image://icons/kenney/" + root.iconVariant + "/"
+                                    + (Media.playing ? "musicOn" : "musicOff")
+                            width: 14; height: 14
+                            sourceSize: Qt.size(28, 28)
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: Media.playing ? "正在播放" : "已暂停"
+                            color: root.tileFg; opacity: 0.5; font.pixelSize: 11
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                     }
                     Text {
                         width: parent.width
@@ -319,7 +366,14 @@ Item {
                         spacing: 10
                         Item {
                             width: 24; height: 24
-                            Text { anchors.centerIn: parent; text: Audio.muted ? "🔇" : "🔊"; font.pixelSize: 15 }
+                            Image {
+                                anchors.centerIn: parent
+                                source: "image://icons/kenney/" + root.iconVariant + "/"
+                                        + (Audio.muted ? "audioOff" : "audioOn")
+                                width: 18; height: 18
+                                sourceSize: Qt.size(36, 36)
+                                fillMode: Image.PreserveAspectFit
+                            }
                             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Audio.toggleMute() }
                         }
                         Text {
@@ -372,7 +426,13 @@ Item {
 
                     Row {
                         spacing: 10
-                        Text { text: "🔋"; font.pixelSize: 19; anchors.verticalCenter: parent.verticalCenter }
+                        Image {
+                            source: "image://icons/kenney/" + root.iconVariant + "/power"
+                            width: 19; height: 19
+                            sourceSize: Qt.size(38, 38)
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
                         Text {
                             text: battTile.pct >= 0 ? battTile.pct + " %" : "—"
                             color: root.tileFg; font.pixelSize: 19; font.weight: Font.Medium
@@ -458,19 +518,14 @@ Item {
                     anchors.centerIn: parent
                     spacing: 8
 
-                    // 自绘几何图标（设置磁贴）：调音台滑杆
-                    Item {
+                    // 设置磁贴：kenney 齿轮
+                    Image {
                         anchors.horizontalCenter: parent.horizontalCenter
                         visible: model.type === "settings"
+                        source: "image://icons/kenney/" + root.iconVariant + "/gear"
                         width: 36; height: 36
-                        // 三条轨道
-                        Rectangle { x: 0; y: 5; width: 36; height: 3; color: root.tileFg; opacity: 0.55 }
-                        Rectangle { x: 0; y: 16; width: 36; height: 3; color: root.tileFg; opacity: 0.55 }
-                        Rectangle { x: 0; y: 27; width: 36; height: 3; color: root.tileFg; opacity: 0.55 }
-                        // 三个错位的滑块
-                        Rectangle { x: 22; y: 2; width: 7; height: 9; color: root.tileFg }
-                        Rectangle { x: 6; y: 13; width: 7; height: 9; color: root.tileFg }
-                        Rectangle { x: 15; y: 24; width: 7; height: 9; color: root.tileFg }
+                        sourceSize: Qt.size(72, 72)
+                        fillMode: Image.PreserveAspectFit
                     }
 
                     // 应用磁贴：图标主题里的真实图标
@@ -501,7 +556,7 @@ Item {
                 }
             }
 
-            // ---- 后台（任务磁贴）----
+            // ---- 后台（任务磁贴：迷你磁贴栅格，点按激活 / 中键关闭 / 悬停角标关闭）----
             Item {
                 anchors.fill: parent
                 anchors.margins: 12
@@ -513,8 +568,15 @@ Item {
 
                     Row {
                         spacing: 6
-                        Text { text: "后台"; color: root.tileFg; opacity: 0.6; font.pixelSize: 12 }
-                        Text { text: Bridge.windows.length; color: root.tileFg; opacity: 0.4; font.pixelSize: 12 }
+                        Image {
+                            source: "image://icons/kenney/" + root.iconVariant + "/menuGrid"
+                            width: 14; height: 14
+                            sourceSize: Qt.size(28, 28)
+                            fillMode: Image.PreserveAspectFit
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text { text: "后台"; color: root.tileFg; opacity: 0.6; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: Bridge.windows.length; color: root.tileFg; opacity: 0.4; font.pixelSize: 12; anchors.verticalCenter: parent.verticalCenter }
                     }
 
                     Text {
@@ -524,73 +586,83 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
 
-                    ListView {
+                    GridView {
+                        id: winGrid
                         visible: Bridge.windows.length > 0
                         width: parent.width
                         height: parent.height - 24
                         clip: true
-                        spacing: 3
+                        cellWidth: 62
+                        cellHeight: 66
                         model: Bridge.windows
 
                         delegate: Item {
-                            id: winRow
+                            id: winCell
+                            width: winGrid.cellWidth
+                            height: winGrid.cellHeight
                             required property var modelData
-                            width: parent ? parent.width : 0
-                            height: 34
 
                             Rectangle {
-                                anchors.fill: parent
-                                color: rowMa.containsMouse ? "#1affffff" : "transparent"
-                                border.width: modelData.active ? 1 : 0
-                                border.color: "#557fd0ff"
-                            }
-                            Image {
-                                id: winIcon
-                                anchors.left: parent.left
-                                anchors.leftMargin: 6
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 22; height: 22
-                                source: "image://icons/" + (modelData.cls || "")
-                                sourceSize: Qt.size(24, 24)
-                                fillMode: Image.PreserveAspectFit
-                            }
-                            Text {
-                                anchors.left: winIcon.right
-                                anchors.leftMargin: 10
-                                anchors.right: closeButton.left
-                                anchors.rightMargin: 8
-                                anchors.verticalCenter: parent.verticalCenter
-                                text: modelData.caption
-                                color: root.tileFg
-                                opacity: modelData.active ? 1 : 0.8
-                                font.pixelSize: 13
-                                elide: Text.ElideRight
-                            }
-                            Rectangle {
-                                id: closeButton
-                                anchors.right: parent.right
-                                anchors.rightMargin: 4
-                                anchors.verticalCenter: parent.verticalCenter
-                                width: 22; height: 22
-                                color: closeMa.containsMouse ? "#3eff4444" : "transparent"
+                                anchors.centerIn: parent
+                                width: 56; height: 60
+                                radius: root.tileRadius
+                                color: winMa.containsMouse ? "#26ffffff" : "#12ffffff"
+                                border.width: winCell.modelData.active ? 1 : 0
+                                border.color: "#667fd0ff"
+
+                                Image {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.top: parent.top
+                                    anchors.topMargin: 5
+                                    width: 26; height: 26
+                                    source: "image://icons/" + (winCell.modelData.cls || "")
+                                    sourceSize: Qt.size(32, 32)
+                                    fillMode: Image.PreserveAspectFit
+                                }
                                 Text {
-                                    anchors.centerIn: parent
-                                    text: "✕"; color: root.tileFg; opacity: 0.7; font.pixelSize: 12
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.bottom: parent.bottom
+                                    anchors.bottomMargin: 4
+                                    width: parent.width - 6
+                                    text: winCell.modelData.caption
+                                    color: root.tileFg
+                                    opacity: winCell.modelData.active ? 1 : 0.75
+                                    font.pixelSize: 10
+                                    elide: Text.ElideRight
+                                    horizontalAlignment: Text.AlignHCenter
+                                }
+                                // 悬停时才出现的关闭角标
+                                Rectangle {
+                                    visible: winMa.containsMouse
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.rightMargin: -3
+                                    anchors.topMargin: -3
+                                    width: 16; height: 16
+                                    radius: 8
+                                    color: cellCloseMa.containsMouse ? "#77ff5555" : "#4dff5555"
+                                    Text { anchors.centerIn: parent; text: "✕"; color: root.tileFg; font.pixelSize: 9 }
+                                    MouseArea {
+                                        id: cellCloseMa
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: Bridge.closeWindow(winCell.modelData.id)
+                                    }
                                 }
                                 MouseArea {
-                                    id: closeMa
+                                    id: winMa
                                     anchors.fill: parent
                                     hoverEnabled: true
+                                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                                     cursorShape: Qt.PointingHandCursor
-                                    onClicked: Bridge.closeWindow(modelData.id)
+                                    onClicked: (mouse) => {
+                                        if (mouse.button === Qt.MiddleButton)
+                                            Bridge.closeWindow(winCell.modelData.id)
+                                        else
+                                            Bridge.activateWindow(winCell.modelData.id)
+                                    }
                                 }
-                            }
-                            MouseArea {
-                                id: rowMa
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: Bridge.activateWindow(modelData.id)
                             }
                         }
                     }
@@ -599,12 +671,13 @@ Item {
 
             MouseArea {
                 id: dragArea
-                // 不锚定 bottom，height 才能生效：便签/媒体/音量只热区顶部 36px，
-                // 其余区域留给磁贴自身的输入控件（文本框/播放控制/音量条）
+                // 不锚定 bottom，height 才能生效：便签/媒体/音量/后台只热区顶部 36px，
+                // 其余区域留给磁贴自身的输入控件（文本框/播放控制/音量条/任务栅格）
                 anchors.left: parent.left
                 anchors.top: parent.top
                 anchors.right: parent.right
-                height: model.type === "note" || model.type === "media" || model.type === "volume" ? 36 : parent.height
+                height: model.type === "note" || model.type === "media" || model.type === "volume"
+                     || model.type === "tasks" ? 36 : parent.height
                 hoverEnabled: true
                 cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
@@ -858,31 +931,49 @@ Item {
 
         contentItem: Column {
             id: addCol
-            spacing: 14
+            spacing: 12
 
             Text { text: "添加磁贴"; color: "#f4f7ff"; font.pixelSize: 18; font.bold: true }
 
-            Grid {
-                columns: 3
-                spacing: 10
+            Repeater {
+                model: [
+                    { cat: "信息", kinds: [
+                        { type: "clock", label: "时钟", icon: "" },
+                        { type: "sys", label: "系统", icon: "barsVertical" },
+                        { type: "battery", label: "电池", icon: "power" },
+                        { type: "media", label: "媒体", icon: "musicOn" },
+                        { type: "volume", label: "音量", icon: "audioOn" }
+                    ] },
+                    { cat: "应用", kinds: [
+                        { type: "app", label: "应用", icon: "home" },
+                        { type: "tasks", label: "后台", icon: "menuGrid" }
+                    ] },
+                    { cat: "工具", kinds: [
+                        { type: "note", label: "便签", icon: "menuList" },
+                        { type: "settings", label: "设置", icon: "gear" }
+                    ] }
+                ]
 
-                Repeater {
-                    model: [
-                        { type: "note", label: "便签" },
-                        { type: "app", label: "应用" },
-                        { type: "tasks", label: "后台" },
-                        { type: "clock", label: "时钟" },
-                        { type: "sys", label: "系统" },
-                        { type: "media", label: "媒体" },
-                        { type: "volume", label: "音量" },
-                        { type: "battery", label: "电池" },
-                        { type: "settings", label: "设置" }
-                    ]
-                    delegate: GlassButton {
-                        required property var modelData
-                        text: modelData.label
-                        width: 96
-                        onClicked: root.addTile(modelData.type)
+                delegate: Column {
+                    required property var modelData
+                    spacing: 8
+
+                    Text {
+                        text: modelData.cat
+                        color: "#9fb0d0"; font.pixelSize: 12; opacity: 0.9
+                    }
+                    Flow {
+                        spacing: 8
+                        width: addCol.width
+                        Repeater {
+                            model: modelData.kinds
+                            delegate: TileKindButton {
+                                required property var modelData
+                                iconName: modelData.icon
+                                labelText: modelData.label
+                                onClicked: root.addTile(modelData.type)
+                            }
+                        }
                     }
                 }
             }
@@ -1317,6 +1408,11 @@ Item {
         // 调试用：ruthis --open-settings 启动时直接弹出设置面板并自截窗口
         if (Qt.application.arguments.indexOf("--open-settings") !== -1) {
             settingsPopup.open()
+            Store.grabWindow(AppWindow)
+        }
+        // 调试用：--open-add 弹出添加磁贴面板（验证分类与图标）
+        if (Qt.application.arguments.indexOf("--open-add") !== -1) {
+            addPopup.open()
             Store.grabWindow(AppWindow)
         }
     }
