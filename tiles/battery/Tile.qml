@@ -49,7 +49,8 @@ Item {
             }
             Text {
                 text: tile.pct >= 0 ? tile.pct + " %" : "—"
-                color: tile.fg; font.pixelSize: 19; font.weight: Font.Medium
+                color: tile.fg; font.pixelSize: Math.max(14, Math.min(19, tile.height * 0.28))
+                font.weight: Font.Medium
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {

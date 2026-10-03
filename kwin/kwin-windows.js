@@ -12,7 +12,8 @@ function windowList() {
             id: String(w.internalId),
             caption: w.caption,
             cls: String(w.resourceClass),
-            active: workspace.activeWindow === w
+            active: workspace.activeWindow === w,
+            closeable: w.closeable !== undefined ? w.closeable : true
         });
     }
     return JSON.stringify(out);

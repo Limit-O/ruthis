@@ -6,5 +6,17 @@
     2
   ],
   "icon": "",
-  "api": 1
+  "api": 1,
+  "props": [
+    {
+      "key": "seconds",
+      "name": "显示秒数",
+      "type": "select",
+      "options": [
+        "关",
+        "开"
+      ],
+      "default": "关"
+    }
+  ]
 }

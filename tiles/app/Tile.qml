@@ -36,4 +36,15 @@ Item {
             font.pixelSize: 14
         }
     }
+
+    // 点按启动；按住拖动快捷键时让位给外壳拖拽
+    MouseArea {
+        anchors.fill: parent
+        cursorShape: Qt.PointingHandCursor
+        onPressed: (mouse) => {
+            if (tile.api && (mouse.modifiers & tile.api.dragModifiers))
+                mouse.accepted = false
+        }
+        onClicked: if (tile.api && tile.cfg) tile.api.launch(tile.cfg.command)
+    }
 }

@@ -39,7 +39,10 @@ Item {
         anchors.topMargin: 28
         text: tile.cfg ? (tile.cfg.text || "") : ""
         color: tile.fg
-        font.pixelSize: 15
+        font.pixelSize: {
+            const n = tile.cfg && tile.cfg.opts ? parseInt(tile.cfg.opts.fontSize) : NaN
+            return n > 8 && n < 60 ? n : 15
+        }
         wrapMode: TextEdit.Wrap
         selectionColor: "#7fd0ff"
         selectedTextColor: "#101418"

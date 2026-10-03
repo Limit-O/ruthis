@@ -80,6 +80,10 @@ private:
                 m.insert(QStringLiteral("w"), sz.at(0).toInt(1));
                 m.insert(QStringLiteral("h"), sz.at(1).toInt(1));
                 m.insert(QStringLiteral("icon"), o.value(QStringLiteral("icon")).toString());
+                // 组件私有设置声明：[{key,name,type(text|select),options,default}]，
+                // 属性面板据此自动生成编辑器，实例值存 tiles.json 的 opts 字段
+                m.insert(QStringLiteral("props"),
+                         o.value(QStringLiteral("props")).toArray().toVariantList());
                 m_sourceConf.insert(t, sourceConf);
                 m_byType.insert(t, m);
                 QUrl src;

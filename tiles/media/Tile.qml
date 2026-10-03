@@ -8,6 +8,8 @@ Item {
     readonly property color fg: api ? api.fg : "#f4f7ff"
     readonly property string iconVariant: api ? api.iconVariant : "White"
     readonly property var media: api ? api.media : null
+    // 播放控制钮尺寸随磁贴缩放
+    readonly property int ctlSize: Math.max(28, Math.min(40, tile.height * 0.34, tile.width * 0.25))
 
     Text {
         visible: !tile.media || !tile.media.available
@@ -54,27 +56,27 @@ Item {
             elide: Text.ElideRight
         }
         Row {
-            spacing: 24
+            spacing: Math.min(24, tile.width * 0.12)
             anchors.horizontalCenter: parent.horizontalCenter
             Item {
-                width: 34; height: 36
-                Text { anchors.centerIn: parent; text: "⏮"; color: tile.fg; opacity: 0.85; font.pixelSize: 19 }
+                width: tile.ctlSize * 0.85; height: tile.ctlSize * 0.9
+                Text { anchors.centerIn: parent; text: "⏮"; color: tile.fg; opacity: 0.85; font.pixelSize: tile.ctlSize * 0.48 }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.previous() }
             }
             Item {
-                width: 40; height: 40
+                width: tile.ctlSize; height: tile.ctlSize
                 Rectangle {
                     anchors.centerIn: parent
-                    width: 40; height: 40; radius: 20
+                    width: tile.ctlSize; height: tile.ctlSize; radius: tile.ctlSize / 2
                     color: "#22ffffff"
                     border.width: 1; border.color: "#3bffffff"
                 }
-                Text { anchors.centerIn: parent; text: tile.media && tile.media.playing ? "⏸" : "▶"; color: tile.fg; font.pixelSize: 17 }
+                Text { anchors.centerIn: parent; text: tile.media && tile.media.playing ? "⏸" : "▶"; color: tile.fg; font.pixelSize: tile.ctlSize * 0.42 }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.toggle() }
             }
             Item {
-                width: 34; height: 36
-                Text { anchors.centerIn: parent; text: "⏭"; color: tile.fg; opacity: 0.85; font.pixelSize: 19 }
+                width: tile.ctlSize * 0.85; height: tile.ctlSize * 0.9
+                Text { anchors.centerIn: parent; text: "⏭"; color: tile.fg; opacity: 0.85; font.pixelSize: tile.ctlSize * 0.48 }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.next() }
             }
         }

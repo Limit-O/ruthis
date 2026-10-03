@@ -80,9 +80,9 @@ Item {
                         elide: Text.ElideRight
                         horizontalAlignment: Text.AlignHCenter
                     }
-                    // 悬停时才出现的关闭角标
+                    // 悬停时才出现的关闭角标：关不掉的窗口不显示（中键同理）
                     Rectangle {
-                        visible: winMa.containsMouse
+                        visible: winMa.containsMouse && winCell.modelData.closeable !== false
                         anchors.right: parent.right
                         anchors.top: parent.top
                         anchors.rightMargin: -3
@@ -106,10 +106,12 @@ Item {
                         acceptedButtons: Qt.LeftButton | Qt.MiddleButton
                         cursorShape: Qt.PointingHandCursor
                         onClicked: (mouse) => {
-                            if (mouse.button === Qt.MiddleButton)
-                                tile.wins.closeWindow(winCell.modelData.id)
-                            else
+                            if (mouse.button === Qt.MiddleButton) {
+                                if (winCell.modelData.closeable !== false)
+                                    tile.wins.closeWindow(winCell.modelData.id)
+                            } else {
                                 tile.wins.activateWindow(winCell.modelData.id)
+                            }
                         }
                     }
                 }

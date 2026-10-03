@@ -23,6 +23,10 @@ Item {
 
     // 文字/图标明暗：auto 跟随卡片亮度，light/dark 手动钉死（设置面板可调）
     property string fgMode: "auto"
+    // 拖动磁贴的修饰键：ctrl/alt/shift（设置面板可调），按住拖动 + 光标抓手
+    property string dragMod: "ctrl"
+    readonly property int dragModifiers: dragMod === "alt" ? Qt.AltModifier
+        : dragMod === "shift" ? Qt.ShiftModifier : Qt.ControlModifier
     readonly property color tileFg: fgMode === "light" ? "#f4f7ff"
         : fgMode === "dark" ? "#151a22"
         : (cardEffectiveLum() > 0.5 ? "#151a22" : "#f4f7ff")
@@ -41,6 +45,7 @@ Item {
         property string iconVariant: root.iconVariant
         property int tileRadius: root.tileRadius
         property color cardColor: root.cardColor
+        property int dragModifiers: root.dragModifiers
         function launch(cmd) { Launcher.launch(cmd) }
         function openSettings() { settingsPopup.open() }
         function updateTile(index, key, value) {
@@ -213,7 +218,11 @@ Item {
             // 外壳只负责卡片背景/拖拽/缩放/菜单，内容全部委托给插件组件
             readonly property var cfg: ({ index: index, type: model.type,
                 text: model.text, glyph: model.glyph, label: model.label,
-                command: model.command, icon: model.icon })
+                command: model.command, icon: model.icon,
+                opts: (function () {
+                    try { return model.opts ? JSON.parse(model.opts) : {} }
+                    catch (e) { return {} }
+                })() })
 
             Loader {
                 id: tileHost
@@ -238,17 +247,13 @@ Item {
 
             MouseArea {
                 id: dragArea
-                // 不锚定 bottom，height 才能生效：便签/媒体/音量/后台只热区顶部 36px，
-                // 其余区域留给磁贴自身的输入控件（文本框/播放控制/音量条/任务栅格）
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.right: parent.right
-                height: model.type === "note" || model.type === "media" || model.type === "volume"
-                     || model.type === "tasks" ? 36 : parent.height
+                anchors.fill: parent
                 hoverEnabled: true
-                cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-
+                // 无修饰键的左键按下不接收，透传给磁贴内容（按钮/滑条/文本框/任务卡片）；
+                // 按住拖动快捷键（默认 Ctrl，设置可换）才进入拖拽，光标随之变为抓手
+                cursorShape: dragArea.pressed ? Qt.ClosedHandCursor
+                             : modHover.hovered ? Qt.OpenHandCursor : Qt.ArrowCursor
                 property bool moved: false
 
                 drag.target: tile
@@ -258,9 +263,13 @@ Item {
                 drag.minimumY: 0
                 drag.maximumY: root.height - tile.height
 
-                onPressed: {
+                onPressed: (mouse) => {
                     moved = false
-                    // 点击磁贴即把焦点从便签文本框移走，停止输入
+                    if (mouse.button === Qt.LeftButton && !(mouse.modifiers & root.dragModifiers)) {
+                        mouse.accepted = false
+                        return
+                    }
+                    // 拖拽/右键前把焦点从便签文本框移走，停止输入
                     tile.forceActiveFocus()
                     ghost.width = tile.width
                     ghost.height = tile.height
@@ -293,14 +302,13 @@ Item {
                         tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
                         tileMenu.tileIndex = model.index
                         tileMenu.open()
-                        return
                     }
-                    if (moved)
-                        return
-                    if (model.type === "app")
-                        Launcher.launch(model.command)
-                    else if (model.type === "settings")
-                        settingsPopup.open()
+                }
+
+                HoverHandler {
+                    id: modHover
+                    acceptedModifiers: root.dragModifiers
+                    cursorShape: Qt.OpenHandCursor
                 }
 
                 function updateGhost() {
@@ -360,6 +368,9 @@ Item {
         property bool isApp: false
         property bool isNote: false
 
+        property var currentOpts: {}
+        property var kindProps: []
+
         function openFor(index) {
             tileIndex = index
             const t = tilesModel.get(index)
@@ -370,7 +381,19 @@ Item {
             nameField.text = t.label
             commandField.text = t.command
             iconField.text = t.icon
+            try { currentOpts = t.opts ? JSON.parse(t.opts) : {} } catch (e) { currentOpts = {} }
+            kindProps = TileRegistry.kind(t.type).props || []
             open()
+        }
+
+        function setOpt(key, value) {
+            if (tileIndex < 0)
+                return
+            const o = Object.assign({}, currentOpts)
+            o[key] = value
+            currentOpts = o
+            tilesModel.setProperty(tileIndex, "opts", JSON.stringify(o))
+            root.saveTiles()
         }
 
         function commitText() {
@@ -459,6 +482,45 @@ Item {
                     width: 82
                     visible: tileProps.isApp || tileProps.isNote
                     onClicked: Launcher.pickIconFile()
+                }
+            }
+
+            // 组件私有设置：由 manifest.props 声明，自动生成编辑器
+            Repeater {
+                model: tileProps.kindProps
+                delegate: Column {
+                    id: propEntry
+                    required property var modelData
+                    width: propsCol.width
+                    spacing: 6
+
+                    Text { text: modelData.name; color: "#c3cfe6"; font.pixelSize: 13 }
+
+                    GlassTextField {
+                        visible: propEntry.modelData.type === "text"
+                        width: parent.width
+                        placeholderText: propEntry.modelData.default || ""
+                        text: {
+                            const v = tileProps.currentOpts[propEntry.modelData.key]
+                            return v !== undefined ? String(v) : ""
+                        }
+                        onEditingFinished: tileProps.setOpt(propEntry.modelData.key, text)
+                    }
+
+                    Row {
+                        visible: propEntry.modelData.type === "select"
+                        spacing: 8
+                        Repeater {
+                            model: propEntry.modelData.options || []
+                            delegate: GlassButton {
+                                required property var modelData
+                                text: (tileProps.currentOpts[propEntry.modelData.key] === modelData
+                                       ? "✓ " : "") + modelData
+                                opacity: tileProps.currentOpts[propEntry.modelData.key] === modelData ? 1 : 0.55
+                                onClicked: tileProps.setOpt(propEntry.modelData.key, modelData)
+                            }
+                        }
+                    }
                 }
             }
 
@@ -582,7 +644,7 @@ Item {
                 const spot = findFreeSpot(1, 1)
                 if (!spot)
                     return
-                tilesModel.append({ type: "app", cx: spot.cx, cy: spot.cy, cw: 1, ch: 1,
+                appendTile({ type: "app", cx: spot.cx, cy: spot.cy, cw: 1, ch: 1,
                     text: "", glyph: "", label: app.name, command: app.exec, icon: app.icon })
                 root.saveTiles()
             }
@@ -782,6 +844,30 @@ Item {
             Row {
                 spacing: 12
                 width: parent.width
+                Text { text: "拖动快捷键"; color: "#c3cfe6"; width: 110; anchors.verticalCenter: parent.verticalCenter }
+                Row {
+                    spacing: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    Repeater {
+                        model: [
+                            { v: "ctrl", n: "Ctrl" },
+                            { v: "alt", n: "Alt" },
+                            { v: "shift", n: "Shift" }
+                        ]
+                        delegate: GlassButton {
+                            required property var modelData
+                            text: (root.dragMod === modelData.v ? "✓ " : "") + modelData.n
+                            width: 76
+                            opacity: root.dragMod === modelData.v ? 1 : 0.55
+                            onClicked: { root.dragMod = modelData.v; root.saveSettings() }
+                        }
+                    }
+                }
+            }
+
+            Row {
+                spacing: 12
+                width: parent.width
                 Text { text: "磁贴间距"; color: "#c3cfe6"; width: 100; anchors.verticalCenter: parent.verticalCenter }
                 GlassSlider {
                     width: parent.width - 190
@@ -894,6 +980,13 @@ Item {
         ]
     }
 
+    // 统一追加：补齐 opts 角色（ListModel 角色集合由首条元素决定，历史数据必须归一化）
+    function appendTile(t) {
+        if (t.opts === undefined)
+            t.opts = ""
+        tilesModel.append(t)
+    }
+
     function addTile(type) {
         // 应用磁贴走应用选择列表，免手打命令/图标/名称
         if (type === "app") {
@@ -908,7 +1001,7 @@ Item {
         const spot = findFreeSpot(k.w, k.h)
         if (!spot)
             return
-        tilesModel.append({ type: type, cx: spot.cx, cy: spot.cy, cw: k.w, ch: k.h,
+        appendTile({ type: type, cx: spot.cx, cy: spot.cy, cw: k.w, ch: k.h,
             text: type === "note" ? "新便签" : "", glyph: "", label: k.name, command: "", icon: "" })
         root.saveTiles()
         addPopup.close()
@@ -951,7 +1044,8 @@ Item {
             cardColor: root.cardColor.toString(),
             wallpaperUrl: root.wallpaperUrl,
             tilesHidden: root.tilesHidden,
-            fgMode: root.fgMode
+            fgMode: root.fgMode,
+            dragMod: root.dragMod
         }))
     }
 
@@ -967,6 +1061,7 @@ Item {
         if (typeof s.wallpaperUrl === "string") root.wallpaperUrl = s.wallpaperUrl
         if (typeof s.tilesHidden === "boolean") root.tilesHidden = s.tilesHidden
         if (typeof s.fgMode === "string") root.fgMode = s.fgMode
+        if (typeof s.dragMod === "string") root.dragMod = s.dragMod
 
         let defs = (data.tiles && data.tiles.length > 0) ? data.tiles : defaultTiles()
         // 旧版 tiles.json 里没有设置磁贴，补一枚
@@ -976,14 +1071,14 @@ Item {
         const iconMap = { konsole: "utilities-terminal", firefox: "firefox", dolphin: "system-file-manager" }
         defs.forEach(function (t) {
             t.icon = t.icon || (t.type === "app" ? (iconMap[t.command] || "") : "")
-            tilesModel.append(t)
+            appendTile(t)
         })
 
         // 旧布局里没有后台磁贴的，自动补一块
         if (!defs.some(function (t) { return t.type === "tasks" })) {
             const spot = findFreeSpot(2, 3)
             if (spot)
-                tilesModel.append({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3,
+                appendTile({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3,
                     text: "", glyph: "", label: "", command: "", icon: "" })
         }
 

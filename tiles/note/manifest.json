@@ -6,5 +6,13 @@
     2
   ],
   "icon": "menuList",
-  "api": 1
+  "api": 1,
+  "props": [
+    {
+      "key": "fontSize",
+      "name": "字号",
+      "type": "text",
+      "default": "15"
+    }
+  ]
 }
