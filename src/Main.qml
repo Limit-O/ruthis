@@ -208,10 +208,88 @@ Item {
                 anchors.fill: parent
                 radius: root.tileRadius
                 color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
-                    Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07 : 0)))
+                    Math.min(1, root.tileOpacity + ((modDrag.pressed || stripDrag.pressed) ? 0.07 : 0)))
                 border.width: 1
                 border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
                     Math.min(1, root.tileOpacity * 1.8 + 0.12))
+            }
+
+            // 拖拽共用状态与落格逻辑
+            property bool moved: false
+
+            function beginDrag() {
+                moved = false
+                tile.forceActiveFocus()
+                ghost.width = tile.width
+                ghost.height = tile.height
+                tile.updateGhost()
+                ghost.visible = true
+            }
+            function dragProgress() {
+                if (modDrag.drag.active || stripDrag.drag.active) {
+                    moved = true
+                    tile.updateGhost()
+                }
+            }
+            function dragEnded() {
+                ghost.visible = false
+                const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
+                const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
+                const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
+                const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
+                tile.x = nx * root.step
+                tile.y = ny * root.step
+                model.cx = nx
+                model.cy = ny
+                root.saveTiles()
+            }
+            function updateGhost() {
+                ghost.x = Math.round(tile.x / root.step) * root.step
+                ghost.y = Math.round(tile.y / root.step) * root.step
+            }
+            function openTileMenu(mouse) {
+                const p = tile.mapToItem(root, mouse.x, mouse.y)
+                tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
+                tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
+                tileMenu.tileIndex = model.index
+                tileMenu.open()
+            }
+
+            // 修饰键拖拽区：铺满磁贴、压在内容之下——按住拖动快捷键可从任意位置拖动，
+            // 其余点击全部由上方内容自行处理，不做任何透传
+            MouseArea {
+                id: modDrag
+                anchors.fill: parent
+                hoverEnabled: true
+                acceptedButtons: Qt.LeftButton | Qt.RightButton
+                cursorShape: modDrag.pressed ? Qt.ClosedHandCursor
+                             : modHover.hovered ? Qt.OpenHandCursor : Qt.ArrowCursor
+                drag.target: tile
+                drag.threshold: 5
+                drag.minimumX: 0
+                drag.maximumX: root.width - tile.width
+                drag.minimumY: 0
+                drag.maximumY: root.height - tile.height
+
+                onPressed: (mouse) => {
+                    if (mouse.button === Qt.LeftButton && !(mouse.modifiers & root.dragModifiers)) {
+                        mouse.accepted = false
+                        return
+                    }
+                    tile.beginDrag()
+                }
+                onPositionChanged: tile.dragProgress()
+                onReleased: tile.dragEnded()
+                onClicked: (mouse) => {
+                    if (mouse.button === Qt.RightButton)
+                        tile.openTileMenu(mouse)
+                }
+
+                HoverHandler {
+                    id: modHover
+                    acceptedModifiers: root.dragModifiers
+                    cursorShape: Qt.OpenHandCursor
+                }
             }
 
             // 内容宿主：磁贴即插件（tiles/<type>/manifest.json + Tile.qml），
@@ -245,75 +323,28 @@ Item {
                       && ("ds" in tileHost.item)
             }
 
+            // 顶部拖拽条：无需修饰键即可拖动/右键菜单，交互内容从它下方布局
             MouseArea {
-                id: dragArea
-                anchors.fill: parent
+                id: stripDrag
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.right: parent.right
+                height: 36
                 hoverEnabled: true
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-                // 无修饰键的左键按下不接收，透传给磁贴内容（按钮/滑条/文本框/任务卡片）；
-                // 按住拖动快捷键（默认 Ctrl，设置可换）才进入拖拽，光标随之变为抓手
-                cursorShape: dragArea.pressed ? Qt.ClosedHandCursor
-                             : modHover.hovered ? Qt.OpenHandCursor : Qt.ArrowCursor
-                property bool moved: false
-
+                cursorShape: stripDrag.pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
                 drag.target: tile
                 drag.threshold: 5
                 drag.minimumX: 0
                 drag.maximumX: root.width - tile.width
                 drag.minimumY: 0
                 drag.maximumY: root.height - tile.height
-
-                onPressed: (mouse) => {
-                    moved = false
-                    if (mouse.button === Qt.LeftButton && !(mouse.modifiers & root.dragModifiers)) {
-                        mouse.accepted = false
-                        return
-                    }
-                    // 拖拽/右键前把焦点从便签文本框移走，停止输入
-                    tile.forceActiveFocus()
-                    ghost.width = tile.width
-                    ghost.height = tile.height
-                    updateGhost()
-                    ghost.visible = true
-                }
-                onPositionChanged: {
-                    if (drag.active) {
-                        moved = true
-                        updateGhost()
-                    }
-                }
-                onReleased: {
-                    ghost.visible = false
-                    const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
-                    const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
-                    const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
-                    const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
-                    tile.x = nx * root.step
-                    tile.y = ny * root.step
-                    model.cx = nx
-                    model.cy = ny
-                    root.saveTiles()
-                }
+                onPressed: (mouse) => tile.beginDrag()
+                onPositionChanged: tile.dragProgress()
+                onReleased: tile.dragEnded()
                 onClicked: (mouse) => {
-                    // 右键：属性菜单
-                    if (mouse.button === Qt.RightButton) {
-                        const p = mapToItem(root, mouse.x, mouse.y)
-                        tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
-                        tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
-                        tileMenu.tileIndex = model.index
-                        tileMenu.open()
-                    }
-                }
-
-                HoverHandler {
-                    id: modHover
-                    acceptedModifiers: root.dragModifiers
-                    cursorShape: Qt.OpenHandCursor
-                }
-
-                function updateGhost() {
-                    ghost.x = Math.round(tile.x / root.step) * root.step
-                    ghost.y = Math.round(tile.y / root.step) * root.step
+                    if (mouse.button === Qt.RightButton)
+                        tile.openTileMenu(mouse)
                 }
             }
         }

@@ -36,7 +36,7 @@ Item {
 
     TextEdit {
         anchors.fill: parent
-        anchors.topMargin: 28
+        anchors.topMargin: 40   // 避让外壳的顶部拖拽条
         text: tile.cfg ? (tile.cfg.text || "") : ""
         color: tile.fg
         font.pixelSize: {

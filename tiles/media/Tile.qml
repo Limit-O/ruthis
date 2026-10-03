@@ -23,6 +23,8 @@ Item {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
         spacing: 3
 
         Row {

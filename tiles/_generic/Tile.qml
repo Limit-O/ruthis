@@ -29,6 +29,7 @@ Item {
 
     Column {
         anchors.fill: parent
+        anchors.margins: 12
         spacing: 5
 
         Row {
