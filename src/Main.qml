@@ -23,10 +23,6 @@ Item {
 
     // 文字/图标明暗：auto 跟随卡片亮度，light/dark 手动钉死（设置面板可调）
     property string fgMode: "auto"
-    // 拖动磁贴的修饰键：ctrl/alt/shift（设置面板可调），按住拖动 + 光标抓手
-    property string dragMod: "ctrl"
-    readonly property int dragModifiers: dragMod === "alt" ? Qt.AltModifier
-        : dragMod === "shift" ? Qt.ShiftModifier : Qt.ControlModifier
     readonly property color tileFg: fgMode === "light" ? "#f4f7ff"
         : fgMode === "dark" ? "#151a22"
         : (cardEffectiveLum() > 0.5 ? "#151a22" : "#f4f7ff")
@@ -45,7 +41,6 @@ Item {
         property string iconVariant: root.iconVariant
         property int tileRadius: root.tileRadius
         property color cardColor: root.cardColor
-        property int dragModifiers: root.dragModifiers
         function launch(cmd) { Launcher.launch(cmd) }
         function openSettings() { settingsPopup.open() }
         function updateTile(index, key, value) {
@@ -204,14 +199,30 @@ Item {
                 NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
             }
 
+            HoverHandler { id: tileHover }
+
             Rectangle {
                 anchors.fill: parent
                 radius: root.tileRadius
                 color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
-                    Math.min(1, root.tileOpacity + ((modDrag.pressed || stripDrag.pressed) ? 0.07 : 0)))
+                    Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07
+                              : tileHover.hovered ? 0.05 : 0)))
                 border.width: 1
                 border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
-                    Math.min(1, root.tileOpacity * 1.8 + 0.12))
+                    Math.min(1, root.tileOpacity * 1.8 + (tileHover.hovered ? 0.2 : 0.12)))
+            }
+            // 顶部内高光：玻璃质感
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: 1
+                height: parent.height / 2
+                radius: root.tileRadius
+                gradient: Gradient {
+                    GradientStop { position: 0; color: "#12ffffff" }
+                    GradientStop { position: 1; color: "#00ffffff" }
+                }
             }
 
             // 拖拽共用状态与落格逻辑
@@ -226,7 +237,7 @@ Item {
                 ghost.visible = true
             }
             function dragProgress() {
-                if (modDrag.drag.active || stripDrag.drag.active) {
+                if (dragArea.drag.active) {
                     moved = true
                     tile.updateGhost()
                 }
@@ -255,15 +266,13 @@ Item {
                 tileMenu.open()
             }
 
-            // 修饰键拖拽区：铺满磁贴、压在内容之下——按住拖动快捷键可从任意位置拖动，
-            // 其余点击全部由上方内容自行处理，不做任何透传
+            // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
             MouseArea {
-                id: modDrag
+                id: dragArea
                 anchors.fill: parent
                 hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: modDrag.pressed ? Qt.ClosedHandCursor
-                             : modHover.hovered ? Qt.OpenHandCursor : Qt.ArrowCursor
+                acceptedButtons: Qt.RightButton
+                cursorShape: dragArea.pressed ? Qt.ClosedHandCursor : Qt.ArrowCursor
                 drag.target: tile
                 drag.threshold: 5
                 drag.minimumX: 0
@@ -271,24 +280,12 @@ Item {
                 drag.minimumY: 0
                 drag.maximumY: root.height - tile.height
 
-                onPressed: (mouse) => {
-                    if (mouse.button === Qt.LeftButton && !(mouse.modifiers & root.dragModifiers)) {
-                        mouse.accepted = false
-                        return
-                    }
-                    tile.beginDrag()
-                }
+                onPressed: (mouse) => tile.beginDrag()
                 onPositionChanged: tile.dragProgress()
                 onReleased: tile.dragEnded()
                 onClicked: (mouse) => {
-                    if (mouse.button === Qt.RightButton)
+                    if (!tile.moved)
                         tile.openTileMenu(mouse)
-                }
-
-                HoverHandler {
-                    id: modHover
-                    acceptedModifiers: root.dragModifiers
-                    cursorShape: Qt.OpenHandCursor
                 }
             }
 
@@ -321,31 +318,6 @@ Item {
                 value: Sources.forType(model.type)
                 when: tileHost.status === Loader.Ready && tileHost.item !== null
                       && ("ds" in tileHost.item)
-            }
-
-            // 顶部拖拽条：无需修饰键即可拖动/右键菜单，交互内容从它下方布局
-            MouseArea {
-                id: stripDrag
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.right: parent.right
-                height: 36
-                hoverEnabled: true
-                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                cursorShape: stripDrag.pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-                drag.target: tile
-                drag.threshold: 5
-                drag.minimumX: 0
-                drag.maximumX: root.width - tile.width
-                drag.minimumY: 0
-                drag.maximumY: root.height - tile.height
-                onPressed: (mouse) => tile.beginDrag()
-                onPositionChanged: tile.dragProgress()
-                onReleased: tile.dragEnded()
-                onClicked: (mouse) => {
-                    if (mouse.button === Qt.RightButton)
-                        tile.openTileMenu(mouse)
-                }
             }
         }
     }
@@ -875,30 +847,6 @@ Item {
             Row {
                 spacing: 12
                 width: parent.width
-                Text { text: "拖动快捷键"; color: "#c3cfe6"; width: 110; anchors.verticalCenter: parent.verticalCenter }
-                Row {
-                    spacing: 8
-                    anchors.verticalCenter: parent.verticalCenter
-                    Repeater {
-                        model: [
-                            { v: "ctrl", n: "Ctrl" },
-                            { v: "alt", n: "Alt" },
-                            { v: "shift", n: "Shift" }
-                        ]
-                        delegate: GlassButton {
-                            required property var modelData
-                            text: (root.dragMod === modelData.v ? "✓ " : "") + modelData.n
-                            width: 76
-                            opacity: root.dragMod === modelData.v ? 1 : 0.55
-                            onClicked: { root.dragMod = modelData.v; root.saveSettings() }
-                        }
-                    }
-                }
-            }
-
-            Row {
-                spacing: 12
-                width: parent.width
                 Text { text: "磁贴间距"; color: "#c3cfe6"; width: 100; anchors.verticalCenter: parent.verticalCenter }
                 GlassSlider {
                     width: parent.width - 190
@@ -942,7 +890,7 @@ Item {
             Item { width: 1; height: 4 }
 
             Text {
-                text: "Ctrl+N 添加磁贴 · Ctrl+H 隐藏/显示 · 右键磁贴属性/删除"
+                text: "Ctrl+N 添加磁贴 · Ctrl+H 隐藏/显示 · 右键拖动磁贴 · 右键点按属性/删除"
                 color: "#669fb0d0"; font.pixelSize: 12
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
@@ -1075,8 +1023,7 @@ Item {
             cardColor: root.cardColor.toString(),
             wallpaperUrl: root.wallpaperUrl,
             tilesHidden: root.tilesHidden,
-            fgMode: root.fgMode,
-            dragMod: root.dragMod
+            fgMode: root.fgMode
         }))
     }
 
@@ -1092,7 +1039,6 @@ Item {
         if (typeof s.wallpaperUrl === "string") root.wallpaperUrl = s.wallpaperUrl
         if (typeof s.tilesHidden === "boolean") root.tilesHidden = s.tilesHidden
         if (typeof s.fgMode === "string") root.fgMode = s.fgMode
-        if (typeof s.dragMod === "string") root.dragMod = s.dragMod
 
         let defs = (data.tiles && data.tiles.length > 0) ? data.tiles : defaultTiles()
         // 旧版 tiles.json 里没有设置磁贴，补一枚

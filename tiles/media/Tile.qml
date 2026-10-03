@@ -1,6 +1,7 @@
 import QtQuick
 
 // 媒体磁贴：MPRIS 播放器状态与控制（经 api.media）
+// 控制图标用 Canvas 矢量绘制，随 ctlSize 缩放、颜色跟随文字明暗
 Item {
     id: tile
     property var api
@@ -9,7 +10,49 @@ Item {
     readonly property string iconVariant: api ? api.iconVariant : "White"
     readonly property var media: api ? api.media : null
     // 播放控制钮尺寸随磁贴缩放
-    readonly property int ctlSize: Math.max(28, Math.min(40, tile.height * 0.34, tile.width * 0.25))
+    readonly property int ctlSize: Math.max(30, Math.min(42, tile.height * 0.34, tile.width * 0.25))
+
+    component MediaIcon: Canvas {
+        property string kind: "play"
+        property color color: "#ffffff"
+        width: size; height: size
+        onKindChanged: requestPaint()
+        onColorChanged: requestPaint()
+        Component.onCompleted: requestPaint()
+        onPaint: {
+            const ctx = getContext("2d")
+            ctx.reset()
+            ctx.fillStyle = color
+            const u = width / 10   // 10 等分网格
+            if (kind === "play") {
+                ctx.beginPath()
+                ctx.moveTo(2.4 * u, 1.2 * u)
+                ctx.lineTo(9 * u, 5 * u)
+                ctx.lineTo(2.4 * u, 8.8 * u)
+                ctx.closePath()
+                ctx.fill()
+            } else if (kind === "pause") {
+                ctx.fillRect(2.2 * u, 1.4 * u, 2.2 * u, 7.2 * u)
+                ctx.fillRect(5.6 * u, 1.4 * u, 2.2 * u, 7.2 * u)
+            } else if (kind === "previous") {
+                ctx.fillRect(1.4 * u, 1.4 * u, 1.4 * u, 7.2 * u)
+                ctx.beginPath()
+                ctx.moveTo(8.6 * u, 1.4 * u)
+                ctx.lineTo(3.6 * u, 5 * u)
+                ctx.lineTo(8.6 * u, 8.6 * u)
+                ctx.closePath()
+                ctx.fill()
+            } else if (kind === "next") {
+                ctx.fillRect(7.2 * u, 1.4 * u, 1.4 * u, 7.2 * u)
+                ctx.beginPath()
+                ctx.moveTo(1.4 * u, 1.4 * u)
+                ctx.lineTo(6.4 * u, 5 * u)
+                ctx.lineTo(1.4 * u, 8.6 * u)
+                ctx.closePath()
+                ctx.fill()
+            }
+        }
+    }
 
     Text {
         visible: !tile.media || !tile.media.available
@@ -58,11 +101,14 @@ Item {
             elide: Text.ElideRight
         }
         Row {
-            spacing: Math.min(24, tile.width * 0.12)
+            spacing: Math.min(22, tile.width * 0.1)
             anchors.horizontalCenter: parent.horizontalCenter
             Item {
                 width: tile.ctlSize * 0.85; height: tile.ctlSize * 0.9
-                Text { anchors.centerIn: parent; text: "⏮"; color: tile.fg; opacity: 0.85; font.pixelSize: tile.ctlSize * 0.48 }
+                MediaIcon {
+                    anchors.centerIn: parent
+                    kind: "previous"; size: tile.ctlSize * 0.5; color: tile.fg; opacity: 0.85
+                }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.previous() }
             }
             Item {
@@ -70,15 +116,23 @@ Item {
                 Rectangle {
                     anchors.centerIn: parent
                     width: tile.ctlSize; height: tile.ctlSize; radius: tile.ctlSize / 2
-                    color: "#22ffffff"
-                    border.width: 1; border.color: "#3bffffff"
+                    color: tile.media && tile.media.playing ? "#2effffff" : "#22ffffff"
+                    border.width: 1
+                    border.color: tile.media && tile.media.playing ? "#55ffffff" : "#3bffffff"
                 }
-                Text { anchors.centerIn: parent; text: tile.media && tile.media.playing ? "⏸" : "▶"; color: tile.fg; font.pixelSize: tile.ctlSize * 0.42 }
+                MediaIcon {
+                    anchors.centerIn: parent
+                    kind: tile.media && tile.media.playing ? "pause" : "play"
+                    size: tile.ctlSize * 0.46; color: tile.fg
+                }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.toggle() }
             }
             Item {
                 width: tile.ctlSize * 0.85; height: tile.ctlSize * 0.9
-                Text { anchors.centerIn: parent; text: "⏭"; color: tile.fg; opacity: 0.85; font.pixelSize: tile.ctlSize * 0.48 }
+                MediaIcon {
+                    anchors.centerIn: parent
+                    kind: "next"; size: tile.ctlSize * 0.5; color: tile.fg; opacity: 0.85
+                }
                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: tile.media.next() }
             }
         }
