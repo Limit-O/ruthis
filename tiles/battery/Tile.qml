@@ -63,7 +63,7 @@ Item {
             width: parent.width
             height: 6
             radius: 3
-            color: api ? Qt.rgba(api.cardColor.r, api.cardColor.g, api.cardColor.b, 0.25) : "transparent"
+            color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.18)
             Rectangle {
                 width: parent.width * Math.max(0, Math.min(100, tile.pct)) / 100
                 height: parent.height

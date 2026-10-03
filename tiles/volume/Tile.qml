@@ -46,6 +46,7 @@ Item {
         Slider {
             id: volSlider
             width: parent.width
+            height: 26   // 自定义 background 无隐含尺寸，在 Column 里必须显式给高
             from: 0; to: 100; stepSize: 1
             value: tile.audio ? tile.audio.volume : 0
             onMoved: if (tile.audio) tile.audio.setVolume(value)
@@ -54,10 +55,13 @@ Item {
                 y: volSlider.topPadding + volSlider.availableHeight / 2 - height / 2
                 width: volSlider.availableWidth
                 height: 6
-                color: "#1affffff"
+                radius: 3
+                // 轨道/手柄跟随文字明暗，亮背景不再隐身
+                color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.18)
                 Rectangle {
                     width: volSlider.visualPosition * parent.width
                     height: parent.height
+                    radius: 3
                     color: "#7fd0ff"
                 }
             }
@@ -65,9 +69,10 @@ Item {
                 x: volSlider.leftPadding + volSlider.visualPosition * (volSlider.availableWidth - width)
                 y: volSlider.topPadding + volSlider.availableHeight / 2 - height / 2
                 width: 16; height: 16
-                color: volSlider.pressed ? "#cfe9ff" : "#eaf3ff"
+                radius: 8
+                color: volSlider.pressed ? "#7fd0ff" : tile.fg
                 border.width: 1
-                border.color: "#3bffffff"
+                border.color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.45)
             }
         }
     }

@@ -62,7 +62,7 @@ Item {
             width: parent.width
             height: 6
             radius: 3
-            color: "#1affffff"
+            color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.18)
             Rectangle {
                 width: parent.width * Math.max(0, Math.min(tile.barMax, tile.barVal)) / tile.barMax
                 height: parent.height

@@ -55,7 +55,9 @@ Item {
                     anchors.centerIn: parent
                     width: 56; height: 60
                     radius: tile.api ? tile.api.tileRadius : 0
-                    color: winMa.containsMouse ? "#26ffffff" : "#12ffffff"
+                    color: winMa.containsMouse
+                           ? Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.14)
+                           : Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b, 0.07)
                     border.width: winCell.modelData.active ? 1 : 0
                     border.color: "#667fd0ff"
 

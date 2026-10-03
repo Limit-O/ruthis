@@ -116,9 +116,11 @@ Item {
                 Rectangle {
                     anchors.centerIn: parent
                     width: tile.ctlSize; height: tile.ctlSize; radius: tile.ctlSize / 2
-                    color: tile.media && tile.media.playing ? "#2effffff" : "#22ffffff"
+                    color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b,
+                                   tile.media && tile.media.playing ? 0.14 : 0.08)
                     border.width: 1
-                    border.color: tile.media && tile.media.playing ? "#55ffffff" : "#3bffffff"
+                    border.color: Qt.rgba(tile.fg.r, tile.fg.g, tile.fg.b,
+                                          tile.media && tile.media.playing ? 0.4 : 0.25)
                 }
                 MediaIcon {
                     anchors.centerIn: parent
