@@ -253,7 +253,6 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         sourceSize: Qt.size(28, 28)
                         fillMode: Image.PreserveAspectFit
-                        asynchronous: true
                     }
                     // 默认自绘图标：三条横线
                     Item {
@@ -306,7 +305,6 @@ Item {
                         sourceSize: Qt.size(64, 64)
                         width: 40; height: 40
                         fillMode: Image.PreserveAspectFit
-                        asynchronous: true
                     }
 
                     // 应用磁贴：无图标时的字符兜底
@@ -379,7 +377,6 @@ Item {
                                 source: "image://icons/" + (modelData.cls || "")
                                 sourceSize: Qt.size(24, 24)
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: true
                             }
                             Text {
                                 anchors.left: winIcon.right
@@ -809,7 +806,6 @@ Item {
                         source: modelData.icon !== "" ? "image://icons/" + modelData.icon : ""
                         sourceSize: Qt.size(32, 32)
                         fillMode: Image.PreserveAspectFit
-                        asynchronous: true
                     }
                     Text {
                         anchors.left: appIcon.visible ? appIcon.right : parent.left

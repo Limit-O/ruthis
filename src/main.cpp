@@ -73,8 +73,10 @@ int main(int argc, char *argv[])
         layer->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityOnDemand);
     }
 
-    view.setSource(QUrl(QStringLiteral("qrc:/src/Main.qml")));
+    // provider 必须先于 setSource 注册：QML 里同步加载的 image://icons/ 请求
+    // 会在 setSource 创建场景的当场发出，晚注册会让图标全部静默加载失败
     view.engine()->addImageProvider(QStringLiteral("icons"), new IconProvider);
+    view.setSource(QUrl(QStringLiteral("qrc:/src/Main.qml")));
 
     if (desktopMode) {
         view.showFullScreen();

@@ -9,6 +9,7 @@
 // 图标路由：image://icons/<id>
 //   id 为图标主题名（如 utilities-terminal）→ 从已装图标主题取
 //   id 为本地文件路径（如 /home/x/icon.png）→ 直接加载用户自定义图标
+//   注意：QIcon 主题引擎非线程安全，QML 侧图标 Image 必须同步加载（勿设 asynchronous: true）
 class IconProvider : public QQuickImageProvider {
 public:
     IconProvider() : QQuickImageProvider(QQuickImageProvider::Pixmap) {}
