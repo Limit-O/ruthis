@@ -23,6 +23,12 @@ qt_add_executable(ruthis
 qt_add_resources(ruthis "qml" PREFIX "/" FILES src/Main.qml)
 qt_add_resources(ruthis "kwin" PREFIX "/" FILES kwin/kwin-windows.js)
 
+# kenney CC0 图标包随仓库分发，编译期嵌入二进制（assets/kenney/{White,Black}/*.png）
+file(GLOB KENNEY_ICONS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
+    assets/kenney/White/*.png
+    assets/kenney/Black/*.png)
+qt_add_resources(ruthis "kenney" PREFIX "/" FILES assets/kenney/license.txt ${KENNEY_ICONS})
+
 target_link_libraries(ruthis PRIVATE
     Qt6::Core
     Qt6::Gui
