@@ -65,11 +65,8 @@ Item {
         root.saveTiles()
         root.flipMode = false
     }
-    // 翻转模式的层标识色：按平面序号黄金分割取相——同层同色，相邻层色相错开
-    function planeColor(idx, selected) {
-        const hue = (idx * 0.61803398875) % 1
-        return Qt.hsla(hue, selected ? 0.72 : 0.5, selected ? 0.6 : 0.52, 1)
-    }
+    // 翻转模式的层卡：深灰玻璃填充 + 亮色描边，选中层描边更粗、卡体更实
+    readonly property color layerCardLine: "#7fd0ff"
 
     // 第 idx 平面全部磁贴的包围盒（像素；zRevision 驱动重算，与 planes 同一技巧）
     function planeRect(idx) {
@@ -488,9 +485,10 @@ Item {
             visible: box !== null
             z: (root.planes.length - depth) * 100 - 1
             radius: root.tileRadius + 8
-            color: Qt.hsla((index * 0.61803398875) % 1, 0.55, 0.5, selected ? 0.32 : 0.20)
+            color: Qt.rgba(0.07, 0.09, 0.13, selected ? 0.60 : 0.45)
             border.width: selected ? 3 : 2
-            border.color: root.planeColor(index, selected)
+            border.color: layerCardLine
+            opacity: selected ? 1 : 0.75
 
             MouseArea {
                 anchors.fill: parent
@@ -1206,7 +1204,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 48
             text: "图层 " + (root.flipIndex + 1) + " / " + root.planes.length
-                  + "  ·  同色同层  ·  Tab 切换  ·  松开 Super 落定  ·  Esc 取消"
+                  + "  ·  同卡同层  ·  Tab 切换  ·  松开 Super 落定  ·  Esc 取消"
             color: "#f4f7ff"
             font.pixelSize: 14
             style: Text.Outline
