@@ -1449,6 +1449,18 @@ Item {
         const p = pinBtn.mapToItem(root, pinBtn.width / 2, pinBtn.height / 2)
         return [p.x, p.y]
     }
+    function debugPinnedTileCenter() {
+        for (let i = 0; i < tilesModel.count; i++) {
+            if (tilesModel.get(i).pinned !== true)
+                continue
+            const it = tilesRepeater.itemAt(i)
+            if (!it)
+                continue
+            const p = it.mapToItem(root, it.width / 2, it.height / 2)
+            return [p.x, p.y]
+        }
+        return []
+    }
 
     function applySettings(s) {
         if (typeof s.tileOpacity === "number") root.tileOpacity = s.tileOpacity
@@ -1539,10 +1551,18 @@ Item {
     onWidthChanged: syncOverlayMask()
     onHeightChanged: syncOverlayMask()
 
-    // 覆盖面跟随主面的保存动作刷新
+    // 覆盖面跟随主面的保存动作刷新；主面也要感知覆盖面的保存（如取消置顶），
+    // 否则覆盖面撤下的磁贴在主面仍是隐藏的置顶状态——磁贴会凭空消失。
+    // 双方都只在"文件与本地状态不一致"（外部保存）时重载，自己的保存不触发重建
     Connections {
-        target: root.overlayMode ? Store : null
-        function onTilesChanged() { root.reloadTiles() }
+        target: Store
+        function onTilesChanged() {
+            const arr = []
+            for (let i = 0; i < tilesModel.count; i++)
+                arr.push(tilesModel.get(i))
+            if (JSON.stringify({ tiles: arr }) !== Store.load())
+                root.reloadTiles()
+        }
         function onSettingsChanged() {
             let s = {}
             try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }

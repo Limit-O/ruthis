@@ -76,6 +76,10 @@ int main(int argc, char *argv[])
         QStringLiteral("test-overlay"),
         QStringLiteral("调试：窗口模式下也创建置顶覆盖面（验证穿透与渲染）"));
     parser.addOption(testOverlayOption);
+    const QCommandLineOption testUnpinOption(
+        QStringLiteral("test-unpin"),
+        QStringLiteral("调试：在覆盖面上合成右键+点置顶项，验证取消置顶与主面同步"));
+    parser.addOption(testUnpinOption);
     parser.process(app);
     const bool desktopMode = parser.isSet(desktopOption);
 
@@ -170,8 +174,10 @@ int main(int argc, char *argv[])
     // ---- 置顶覆盖面（docs/z-axis.md 2.5/§6）：LayerTop 承载置顶磁贴，浮于一切窗口 ----
     // 与主面共享后端单例，独立引擎加载同一 Main.qml（OverlayMode=true，无壁纸只渲染置顶）；
     // 输入经 mask 限定在置顶磁贴矩形内，其余区域点击穿透到真实窗口
-    if (desktopMode || parser.isSet(testOverlayOption)) {
+    QQuickView *overlayView = nullptr;
+    if (desktopMode || parser.isSet(testOverlayOption) || parser.isSet(testUnpinOption)) {
         auto *overlay = new QQuickView();
+        overlayView = overlay;
         if (desktopMode) {
             auto *olay = LayerShellQt::Window::get(overlay);
             olay->setLayer(LayerShellQt::Window::LayerTop);
@@ -216,6 +222,49 @@ int main(int argc, char *argv[])
                 QCoreApplication::quit();
             });
         }
+    }
+
+    // --test-unpin：在覆盖面上合成"右键置顶磁贴→菜单点永久置顶"，验证取消置顶
+    // 以及主面感知外部保存（磁贴应回到主面渲染而非消失）
+    if (parser.isSet(testUnpinOption) && overlayView) {
+        QQuickView *ov = overlayView;
+        const auto callQmlOn = [](QQuickView *v, const char *sig) -> QVariant {
+            QVariant ret;
+            QQuickItem *ri = v->rootObject();
+            const int idx = ri->metaObject()->indexOfMethod(sig);
+            if (idx >= 0)
+                ri->metaObject()->method(idx).invoke(ri, Q_RETURN_ARG(QVariant, ret));
+            return ret;
+        };
+        const auto clickOn = [](QQuickView *v, const QPointF &p, Qt::MouseButton button) {
+            QMouseEvent press(QEvent::MouseButtonPress, p, p, button, button, Qt::NoModifier);
+            QGuiApplication::sendEvent(v, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, p, p, button, Qt::NoButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(v, &release);
+        };
+        QTimer::singleShot(800, ov, [&]() {
+            const QVariantList c = callQmlOn(ov, "debugPinnedTileCenter()").toList();
+            if (c.size() != 2) {
+                qWarning() << "没有置顶磁贴可测";
+                QCoreApplication::quit();
+                return;
+            }
+            clickOn(ov, QPointF(c[0].toReal(), c[1].toReal()), Qt::RightButton);
+            QTimer::singleShot(500, ov, [&]() {
+                const QVariantList b = callQmlOn(ov, "debugPinBtnCenter()").toList();
+                if (b.size() != 2) {
+                    qWarning() << "覆盖面菜单未打开";
+                    QCoreApplication::quit();
+                    return;
+                }
+                clickOn(ov, QPointF(b[0].toReal(), b[1].toReal()), Qt::LeftButton);
+                QTimer::singleShot(600, ov, [&]() {
+                    view.grabWindow().save(QStringLiteral("/tmp/ruthis-unpin-main.png"));
+                    ov->grabWindow().save(QStringLiteral("/tmp/ruthis-unpin-overlay.png"));
+                    QCoreApplication::quit();
+                });
+            });
+        });
     }
 
     // --test-menu：向窗口投递真实鼠标事件，验证"右键→菜单→置顶"整条链路
