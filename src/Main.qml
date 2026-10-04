@@ -24,6 +24,14 @@ Item {
 
     // 文字/图标明暗：auto 跟随卡片亮度，light/dark 手动钉死（设置面板可调）
     property string fgMode: "auto"
+    // 玻璃质感（顶部高光+描边），设置面板可关
+    property bool glass: true
+    // 覆盖面：拖拽进行中（输入区临时放开为全屏，否则 mask 会截断拖拽事件）
+    property bool overlayDragActive: false
+    // 弹窗或拖拽期间覆盖面输入区放开为全屏
+    readonly property bool overlayInputFull: overlayDragActive || tileMenu.opened
+        || tileProps.opened || addPopup.opened || settingsPopup.opened
+    onOverlayInputFullChanged: syncOverlayMask()
     readonly property color tileFg: fgMode === "light" ? "#f4f7ff"
         : fgMode === "dark" ? "#151a22"
         : (cardEffectiveLum() > 0.5 ? "#151a22" : "#f4f7ff")
@@ -343,6 +351,7 @@ Item {
                 moved = false
                 tile.dragOrigCx = model.cx
                 tile.dragOrigCy = model.cy
+                root.overlayDragActive = root.overlayMode
                 tile.forceActiveFocus()
                 ghost.width = tile.width
                 ghost.height = tile.height
@@ -357,6 +366,7 @@ Item {
             }
             function dragEnded() {
                 ghost.visible = false
+                root.overlayDragActive = false
                 const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
                 const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
                 const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
@@ -406,17 +416,7 @@ Item {
                 anchors.fill: parent
                 visible: !tile.blurOn
 
-                // 投影：抬升（z>0）或置顶的磁贴有高度感
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.topMargin: -2
-                    anchors.bottomMargin: -8
-                    anchors.leftMargin: -4
-                    anchors.rightMargin: -4
-                    radius: root.tileRadius + 4
-                    color: "#4d000000"
-                    visible: model.z > 0 || model.pinned === true
-                }
+                // 磁贴下的假投影已按需求移除（黑幕观感）；高度感交给透视纵深
 
                 Rectangle {
                     anchors.fill: parent
@@ -424,12 +424,13 @@ Item {
                     color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
                         Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07
                                   : tileHover.hovered ? 0.05 : 0)))
-                    border.width: 1
+                    border.width: root.glass ? 1 : 0
                     border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
                         Math.min(1, root.tileOpacity * 1.8 + (tileHover.hovered ? 0.2 : 0.12)))
                 }
-                // 顶部内高光：玻璃质感
+                // 顶部内高光：玻璃质感（设置面板可关）
                 Rectangle {
+                    visible: root.glass
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -443,10 +444,8 @@ Item {
                 }
 
                 // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
-                // 覆盖面里禁拖拽：输入 mask 不会跟随拖动
                 MouseArea {
                     id: dragArea
-                    enabled: !root.overlayMode
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.RightButton
@@ -494,6 +493,20 @@ Item {
 
                 // 置顶徽章已按需求移除：置顶磁贴迁入覆盖面，无需特殊标识
 
+                // Super+滚轮：单磁贴沿 Z 微调（按平面边界步进）；其余滚轮放行给内容
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    onWheel: (wheel) => {
+                        if (!(wheel.modifiers & Qt.MetaModifier) || !AppWindow.active
+                            || model.pinned === true || root.flipMode) {
+                            wheel.accepted = false
+                            return
+                        }
+                        root.nudgeTileZ(tile, wheel.angleDelta.y > 0)
+                        wheel.accepted = true
+                    }
+                }
             } // card
 
             // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深。
@@ -1126,6 +1139,17 @@ Item {
 
             Row {
                 spacing: 12
+                GlassButton {
+                    text: (root.glass ? "✓ " : "") + "玻璃质感"
+                    opacity: root.glass ? 1 : 0.55
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: { root.glass = !root.glass; root.saveSettings() }
+                }
+                Text { text: "顶部高光与卡片描边"; color: "#9fb0d0"; anchors.verticalCenter: parent.verticalCenter }
+            }
+
+            Row {
+                spacing: 12
                 width: parent.width
                 Text { text: "磁贴间距"; color: "#c3cfe6"; width: 100; anchors.verticalCenter: parent.verticalCenter }
                 GlassSlider {
@@ -1170,7 +1194,7 @@ Item {
             Item { width: 1; height: 4 }
 
             Text {
-                text: "Ctrl+N 添加磁贴 · 右键拖动磁贴 · 悬停+Super+< > 调层次 · Super+Tab 翻图层 · Ctrl+H 隐藏/显示"
+                text: "Ctrl+N 添加磁贴 · 右键拖动磁贴 · 悬停+Super+滚轮或 [ ] 调层次 · Super+Tab 翻图层 · Ctrl+H 隐藏/显示"
                 color: "#669fb0d0"; font.pixelSize: 12
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
@@ -1227,8 +1251,8 @@ Item {
         onActivated: Qt.quit()
     }
 
-    // ---- Z 轴：Super+< / Super+> 微调悬停磁贴层次（按平面边界步进）----
-    // ">" 拉近提升（更大更近），"<" 推远下沉；须先悬停磁贴且桌面持有焦点（2.4）
+    // ---- Z 轴：Super+滚轮 / Super+[ ] 微调悬停磁贴层次（按平面边界步进）----
+    // ">" "]" 拉近提升，"<" "[" 推远下沉；须先悬停磁贴且桌面持有焦点（2.4）
     function nudgeTileZ(tileItem, up) {
         if (!tileItem || root.flipMode || !AppWindow.active)
             return
@@ -1250,12 +1274,12 @@ Item {
         root.saveTiles()
     }
     Shortcut {
-        sequence: "Meta+>"
+        sequence: "Meta+]"
         enabled: root.hoveredTile !== null && !root.flipMode && AppWindow.active
         onActivated: root.nudgeTileZ(root.hoveredTile, true)
     }
     Shortcut {
-        sequence: "Meta+<"
+        sequence: "Meta+["
         enabled: root.hoveredTile !== null && !root.flipMode && AppWindow.active
         onActivated: root.nudgeTileZ(root.hoveredTile, false)
     }
@@ -1434,6 +1458,7 @@ Item {
         if (typeof s.wallpaperUrl === "string") root.wallpaperUrl = s.wallpaperUrl
         if (typeof s.tilesHidden === "boolean") root.tilesHidden = s.tilesHidden
         if (typeof s.fgMode === "string") root.fgMode = s.fgMode
+        if (typeof s.glass === "boolean") root.glass = s.glass
     }
 
     // 覆盖面实例据主面保存动作重载（含输入 mask 跟随）
@@ -1463,17 +1488,22 @@ Item {
         syncOverlayMask()
     }
 
-    function syncOverlayMask() {
-        // 覆盖面窗口的输入区 = 置顶磁贴矩形并集；其余区域点击穿透到真实窗口
+    function syncOverlayMask() {        // 覆盖面窗口输入区 = 置顶磁贴矩形并集；其余区域点击穿透到真实窗口。
+        // 拖拽/弹窗期间放开为全屏（mask 截断拖拽与菜单外点击）
         if (!root.overlayMode)
             return
         const rects = []
-        for (let i = 0; i < tilesModel.count; i++) {
-            const t = tilesModel.get(i)
-            if (t.pinned !== true)
-                continue
-            rects.push({ x: t.cx * root.step, y: t.cy * root.step,
-                         w: t.cw * root.step - root.gap, h: t.ch * root.step - root.gap })
+        if (root.overlayDragActive || tileMenu.opened || tileProps.opened
+                || addPopup.opened || settingsPopup.opened) {
+            rects.push({ x: 0, y: 0, w: root.width, h: root.height })
+        } else {
+            for (let i = 0; i < tilesModel.count; i++) {
+                const t = tilesModel.get(i)
+                if (t.pinned !== true)
+                    continue
+                rects.push({ x: t.cx * root.step, y: t.cy * root.step,
+                             w: t.cw * root.step - root.gap, h: t.ch * root.step - root.gap })
+            }
         }
         Store.applyMask(OverlayWindow, JSON.stringify(rects))
     }
