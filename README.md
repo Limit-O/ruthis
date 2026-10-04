@@ -41,6 +41,8 @@ build/ruthis --dev       # 开发模式：从源码目录加载 QML，改动即�
 build/ruthis --open-settings   # 启动即打开设置面板（调试）
 build/ruthis --open-add        # 启动即打开添加磁贴面板（调试）
 build/ruthis --open-flip       # 启动即进入图层翻转模式并自截帧（调试）
+build/ruthis --test-menu       # 合成鼠标事件回归右键菜单链路（调试）
+build/ruthis --test-overlay    # 窗口模式下创建置顶覆盖面（调试）
 ```
 
 官方磁贴需要安装到磁贴目录（外置化后与第三方磁贴同机制）：
