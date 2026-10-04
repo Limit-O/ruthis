@@ -89,6 +89,9 @@ int main(int argc, char *argv[])
         // 必须在窗口 show 之前接管，QQuickView 由此变成 layer-shell surface
         auto *layer = LayerShellQt::Window::get(&view);
         layer->setLayer(LayerShellQt::Window::LayerBackground);
+        // scope="desktop"：KWin 据此把窗口类型判为 Desktop（桌面背景），
+        // Overview/桌面网格等效果才会把它当壁纸背景而非普通窗口缩放
+        layer->setScope(QStringLiteral("desktop"));
         // 上游头文件漏了 Q_DECLARE_OPERATORS_FOR_FLAGS，位或会退化成 int，需显式构造 QFlags
         layer->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop)
                           | LayerShellQt::Window::AnchorBottom
