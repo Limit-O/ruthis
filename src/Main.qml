@@ -31,6 +31,41 @@ Item {
         : fgMode === "dark" ? "Black"
         : (cardEffectiveLum() > 0.5 ? "Black" : "White")
 
+    // ---- Z 轴状态（docs/z-axis.md）----
+    property bool flipMode: false
+    property int flipIndex: 0
+    property int zRevision: 0
+    // 非 pinned 磁贴的全部 z 平面（升序去重）；zRevision 变化时重算
+    readonly property var planes: {
+        void zRevision
+        const zs = []
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true && zs.indexOf(t.z || 0) === -1)
+                zs.push(t.z || 0)
+        }
+        zs.sort(function (a, b) { return a - b })
+        return zs
+    }
+    // 落定：选中平面的磁贴整体升到最上（保持层内相对次序）
+    function landFlip() {
+        const target = root.planes[root.flipIndex]
+        let maxZ = 0
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true && (t.z || 0) > maxZ) maxZ = t.z || 0
+        }
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true && (t.z || 0) === target)
+                tilesModel.setProperty(i, "z", maxZ + 1)
+        }
+        root.zRevision++
+        root.saveTiles()
+        root.flipMode = false
+    }
+    function cancelFlip() { root.flipMode = false }
+
     // 平台服务集：注入每个磁贴插件（tiles/<type>/Tile.qml 的 api 属性）
     readonly property var api: QtObject {
         property var sys: SysInfo
@@ -185,8 +220,20 @@ Item {
             // 隐藏时全部隐去（含设置磁贴），Ctrl+H 唯一入口
             visible: !root.tilesHidden
 
-            x: model.cx * root.step
-            y: model.cy * root.step
+            // Z 轴：pinned 恒在最上；翻转模式下按级联深度取渲染序
+            readonly property int planeIdx: root.planes.indexOf(model.z || 0)
+            readonly property int flipDepth: root.flipMode && root.planes.length > 1
+                ? (planeIdx - root.flipIndex + root.planes.length) % root.planes.length
+                : 0
+
+            z: model.pinned === true ? 1000000
+               : root.flipMode ? (root.planes.length - flipDepth) * 100
+               : (model.z || 0)
+            scale: root.flipMode ? Math.max(0.72, 1 - 0.07 * flipDepth) : 1
+            opacity: root.flipMode && flipDepth > 0 ? Math.max(0.15, 1 - 0.35 * flipDepth) : 1
+
+            x: model.cx * root.step + (root.flipMode ? 26 * flipDepth : 0)
+            y: model.cy * root.step + (root.flipMode ? 26 * flipDepth : 0)
             width: model.cw * root.step - root.gap
             height: model.ch * root.step - root.gap
 
@@ -198,8 +245,22 @@ Item {
                 enabled: !dragArea.drag.active
                 NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
             }
+            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: 200 } }
 
             HoverHandler { id: tileHover }
+
+            // 投影：抬升（z>0）或置顶的磁贴有高度感
+            Rectangle {
+                anchors.fill: parent
+                anchors.topMargin: -2
+                anchors.bottomMargin: -8
+                anchors.leftMargin: -4
+                anchors.rightMargin: -4
+                radius: root.tileRadius + 4
+                color: "#4d000000"
+                visible: model.z > 0 || model.pinned === true
+            }
 
             Rectangle {
                 anchors.fill: parent
@@ -267,6 +328,7 @@ Item {
             }
 
             // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
+            // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
             MouseArea {
                 id: dragArea
                 anchors.fill: parent
@@ -319,6 +381,43 @@ Item {
                 value: Sources.forType(model.type)
                 when: tileHost.status === Loader.Ready && tileHost.item !== null
                       && ("ds" in tileHost.item)
+            }
+
+            // 置顶徽章
+            Rectangle {
+                visible: model.pinned === true
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 4
+                width: 16; height: 16; radius: 8
+                color: "#7fd0ff"
+                Text { anchors.centerIn: parent; text: "顶"; color: "#10141c"; font.pixelSize: 9; font.bold: true }
+            }
+
+            // Super+滚轮：单磁贴沿 Z 微调（按平面边界步进）；其余滚轮放行给内容
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.NoButton
+                onWheel: (wheel) => {
+                    if (!(wheel.modifiers & Qt.MetaModifier) || !AppWindow.active
+                        || model.pinned === true || root.flipMode) {
+                        wheel.accepted = false
+                        return
+                    }
+                    const cur = model.z || 0
+                    let nz
+                    if (wheel.angleDelta.y > 0) {
+                        const next = root.planes.find(function (v) { return v > cur })
+                        nz = next !== undefined ? next : cur + 1
+                    } else {
+                        const prev = root.planes.slice().reverse().find(function (v) { return v < cur })
+                        nz = prev !== undefined ? prev : cur - 1
+                    }
+                    tilesModel.setProperty(index, "z", nz)
+                    root.zRevision++
+                    root.saveTiles()
+                    wheel.accepted = true
+                }
             }
         }
     }
@@ -374,6 +473,7 @@ Item {
 
         property var currentOpts: {}
         property var kindProps: []
+        property bool pinOn: false
 
         function openFor(index) {
             tileIndex = index
@@ -385,6 +485,7 @@ Item {
             nameField.text = t.label
             commandField.text = t.command
             iconField.text = t.icon
+            pinOn = t.pinned === true
             try { currentOpts = t.opts ? JSON.parse(t.opts) : {} } catch (e) { currentOpts = {} }
             kindProps = TileRegistry.kind(t.type).props || []
             open()
@@ -486,6 +587,23 @@ Item {
                     width: 82
                     visible: tileProps.isApp || tileProps.isNote
                     onClicked: Launcher.pickIconFile()
+                }
+            }
+
+            // 永久置顶（docs/z-axis.md 2.5）
+            Row {
+                spacing: 8
+                GlassButton {
+                    text: (tileProps.pinOn ? "✓ " : "") + "永久置顶"
+                    opacity: tileProps.pinOn ? 1 : 0.55
+                    onClicked: {
+                        if (tileProps.tileIndex < 0)
+                            return
+                        tileProps.pinOn = !tileProps.pinOn
+                        tilesModel.setProperty(tileProps.tileIndex, "pinned", tileProps.pinOn)
+                        root.zRevision++
+                        root.saveTiles()
+                    }
                 }
             }
 
@@ -905,7 +1023,7 @@ Item {
             Item { width: 1; height: 4 }
 
             Text {
-                text: "Ctrl+N 添加磁贴 · Ctrl+H 隐藏/显示 · 右键拖动磁贴 · 右键点按属性/删除"
+                text: "Ctrl+N 添加磁贴 · 右键拖动磁贴 · Super+滚轮调层次 · Super+Tab 翻图层 · Ctrl+H 隐藏/显示"
                 color: "#669fb0d0"; font.pixelSize: 12
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
@@ -948,6 +1066,7 @@ Item {
     Shortcut {
         sequence: "Esc"
         onActivated: {
+            if (root.flipMode) { root.cancelFlip(); return }
             if (addPopup.opened) addPopup.close()
             else if (tileProps.opened) tileProps.close()
             else if (tileMenu.opened) tileMenu.close()
@@ -959,6 +1078,51 @@ Item {
     Shortcut {
         sequence: "Ctrl+Q"
         onActivated: Qt.quit()
+    }
+
+    // ---- Z 轴：Super+Tab 图层翻转切换器（docs/z-axis.md 2.2）----
+    Shortcut {
+        sequence: "Meta+Tab"
+        enabled: !root.flipMode && root.planes.length > 1
+        onActivated: {
+            root.flipMode = true
+            root.flipIndex = root.planes.length - 1
+        }
+    }
+    Shortcut {
+        sequence: "Tab"
+        enabled: root.flipMode
+        onActivated: root.flipIndex = (root.flipIndex + 1) % root.planes.length
+    }
+    Shortcut {
+        sequence: "Meta+Shift+Tab"
+        enabled: root.flipMode
+        onActivated: root.flipIndex = (root.flipIndex - 1 + root.planes.length) % root.planes.length
+    }
+
+    // 翻转模式的模态覆盖层：暗化、捕获点击取消、监听 Super 松开落定
+    Rectangle {
+        id: flipOverlay
+        anchors.fill: parent
+        visible: root.flipMode
+        color: "#55000000"
+        focus: root.flipMode
+        Keys.onReleased: (event) => {
+            if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R)
+                root.landFlip()
+        }
+        MouseArea { anchors.fill: parent; onClicked: root.cancelFlip() }
+        Text {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 48
+            text: "图层 " + (root.flipIndex + 1) + " / " + root.planes.length
+                  + "  ·  Tab 切换  ·  松开 Super 落定  ·  Esc 取消"
+            color: "#f4f7ff"
+            font.pixelSize: 14
+            style: Text.Outline
+            styleColor: "#80000000"
+        }
     }
 
     function defaultTiles() {
@@ -974,10 +1138,11 @@ Item {
         ]
     }
 
-    // 统一追加：补齐 opts 角色（ListModel 角色集合由首条元素决定，历史数据必须归一化）
+    // 统一追加：补齐 opts/z/pinned 角色（ListModel 角色集合由首条元素决定，历史数据必须归一化）
     function appendTile(t) {
-        if (t.opts === undefined)
-            t.opts = ""
+        if (t.opts === undefined) t.opts = ""
+        if (t.z === undefined) t.z = 0
+        if (t.pinned === undefined) t.pinned = false
         tilesModel.append(t)
     }
 
