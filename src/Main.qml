@@ -23,8 +23,9 @@ Item {
 
     // 文字/图标明暗：auto 跟随卡片亮度，light/dark 手动钉死（设置面板可调）
     property string fgMode: "auto"
-    // 玻璃质感（顶部高光+描边），设置面板可关
-    property bool glass: true
+    // 玻璃质感拆分可调：顶部高光渐变与卡片描边各自开关
+    property bool glassHighlight: true
+    property bool glassBorder: true
     // 覆盖面：拖拽进行中（输入区临时放开为全屏，否则 mask 会截断拖拽事件）
     property bool overlayDragActive: false
     // 弹窗或拖拽期间覆盖面输入区放开为全屏
@@ -422,13 +423,13 @@ Item {
                     color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
                         Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07
                                   : tileHover.hovered ? 0.05 : 0)))
-                    border.width: root.glass ? 1 : 0
+                    border.width: root.glassBorder ? 1 : 0
                     border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
                         Math.min(1, root.tileOpacity * 1.8 + (tileHover.hovered ? 0.2 : 0.12)))
                 }
                 // 顶部内高光：玻璃质感（设置面板可关）
                 Rectangle {
-                    visible: root.glass
+                    visible: root.glassHighlight
                     anchors.top: parent.top
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -1125,12 +1126,18 @@ Item {
             Row {
                 spacing: 12
                 GlassButton {
-                    text: (root.glass ? "✓ " : "") + "玻璃质感"
-                    opacity: root.glass ? 1 : 0.55
+                    text: (root.glassHighlight ? "✓ " : "") + "顶部高光"
+                    opacity: root.glassHighlight ? 1 : 0.55
                     anchors.verticalCenter: parent.verticalCenter
-                    onClicked: { root.glass = !root.glass; root.saveSettings() }
+                    onClicked: { root.glassHighlight = !root.glassHighlight; root.saveSettings() }
                 }
-                Text { text: "顶部高光与卡片描边"; color: "#9fb0d0"; anchors.verticalCenter: parent.verticalCenter }
+                GlassButton {
+                    text: (root.glassBorder ? "✓ " : "") + "卡片描边"
+                    opacity: root.glassBorder ? 1 : 0.55
+                    anchors.verticalCenter: parent.verticalCenter
+                    onClicked: { root.glassBorder = !root.glassBorder; root.saveSettings() }
+                }
+                Text { text: "玻璃质感"; color: "#9fb0d0"; anchors.verticalCenter: parent.verticalCenter }
             }
 
             Row {
@@ -1418,7 +1425,9 @@ Item {
             cardColor: root.cardColor.toString(),
             wallpaperUrl: root.wallpaperUrl,
             tilesHidden: root.tilesHidden,
-            fgMode: root.fgMode
+            fgMode: root.fgMode,
+            glassHighlight: root.glassHighlight,
+            glassBorder: root.glassBorder
         }))
     }
 
@@ -1455,7 +1464,12 @@ Item {
         if (typeof s.wallpaperUrl === "string") root.wallpaperUrl = s.wallpaperUrl
         if (typeof s.tilesHidden === "boolean") root.tilesHidden = s.tilesHidden
         if (typeof s.fgMode === "string") root.fgMode = s.fgMode
-        if (typeof s.glass === "boolean") root.glass = s.glass
+        if (typeof s.glass === "boolean") {          // 旧字段迁移
+            root.glassHighlight = s.glass
+            root.glassBorder = s.glass
+        }
+        if (typeof s.glassHighlight === "boolean") root.glassHighlight = s.glassHighlight
+        if (typeof s.glassBorder === "boolean") root.glassBorder = s.glassBorder
     }
 
     // 覆盖面实例据主面保存动作重载（含输入 mask 跟随）
