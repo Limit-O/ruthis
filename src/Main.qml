@@ -36,8 +36,45 @@ Item {
     property bool flipMode: false
     property int flipIndex: 0
     property int zRevision: 0
-    // 最近拖动的磁贴：渲染序在本层置顶（同层重叠时谁后拖谁在上）
-    property Item lastDragged: null
+    // 覆盖面模式（本实例是置顶磁贴的 LayerTop 宿主窗口）
+    readonly property bool overlayMode: OverlayMode === true
+    // 悬停中的磁贴：Super+</> 微调它的层次
+    property Item hoveredTile: null
+
+    // ---- 透视纵深（真 3D 后退：位置向消失点收敛 + 缩放 + rotateY）----
+    readonly property real eye: 1000          // 相机距离
+    readonly property real planeGap: 150      // 层间 z 间距
+    readonly property real vpX: width / 2     // 消失点
+    readonly property real vpY: height * 0.42
+    function recedeS(d) { return root.eye / (root.eye + root.planeGap * d) }
+
+    // 4x4 行主序矩阵乘（行向量约定：p' = p·M）
+    function mul4(a, b) {
+        const r = []
+        for (let i = 0; i < 4; i++)
+            for (let j = 0; j < 4; j++) {
+                let v = 0
+                for (let k = 0; k < 4; k++)
+                    v += a[i * 4 + k] * b[k * 4 + j]
+                r.push(v)
+            }
+        return r
+    }
+    // 第 d 层的透视矩阵：绕自身竖直中轴 rotateY + 均匀缩放 + 透视除法（近大远小）
+    function recedeMatrix(d, w) {
+        if (!root.flipMode || d <= 0)
+            return [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        const ang = Math.min(40, 6 * d) * Math.PI / 180
+        const s = root.recedeS(d)
+        const c = w / 2
+        const cos = Math.cos(ang), sin = Math.sin(ang)
+        const t1 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -c, 0, 0, 1]
+        const sc = [s, 0, 0, 0, 0, s, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
+        const ry = [cos, 0, -sin, 0, 0, 1, 0, 0, sin, 0, cos, 0, 0, 0, 0, 1]
+        const t2 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, c, 0, 0, 1]
+        const p = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, -1 / root.eye, 0, 0, 0, 1]
+        return mul4(mul4(mul4(mul4(t1, sc), ry), t2), p)
+    }
     // 非 pinned 磁贴的全部 z 平面（升序去重）；zRevision 变化时重算
     readonly property var planes: {
         void zRevision
@@ -206,9 +243,10 @@ Item {
     // =====================================================
 
     // ---- 背景：壁纸/渐变。桌面层模式下 ruthis 就是壁纸的渲染者 ----
+    // 覆盖面模式必须全透明，露出其下的真实窗口
     Rectangle {
         anchors.fill: parent
-        visible: root.wallpaperUrl === ""
+        visible: root.wallpaperUrl === "" && !root.overlayMode
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#1c2333" }
             GradientStop { position: 1.0; color: "#0c0f16" }
@@ -217,7 +255,7 @@ Item {
 
     Image {
         anchors.fill: parent
-        visible: root.wallpaperUrl !== ""
+        visible: root.wallpaperUrl !== "" && !root.overlayMode
         source: root.wallpaperUrl
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
@@ -242,8 +280,10 @@ Item {
         delegate: Item {
             id: tile
 
-            // 隐藏时全部隐去（含设置磁贴），Ctrl+H 唯一入口
+            // 隐藏时全部隐去（含设置磁贴），Ctrl+H 唯一入口。
+            // 覆盖面模式只渲染置顶磁贴；桌面模式下置顶磁贴迁入覆盖面，主面不再渲染
             visible: !root.tilesHidden
+                && (root.overlayMode ? isPinned : !(isPinned && DesktopMode))
 
             // Z 轴：pinned 恒在最上且不参与翻转（层级巡航不影响置顶，docs/z-axis.md 2.5）；
             // 常态渲染 z 以最低平面归一——负 z 的磁贴不许沉到壁纸（z=0 前序兄弟）之下
@@ -255,19 +295,19 @@ Item {
 
             z: isPinned ? 1000000
                : root.flipMode ? (root.planes.length - flipDepth) * 100
-               // 拖动中抬到全部平面之上；最近拖动者在同层置顶（同层重叠可用的手段）
+               // 拖动中抬到全部平面之上（同层互斥由落点碰撞检测保证）
                : (model.z || 0) - (root.planes.length ? root.planes[0] : 0)
                  + (dragArea.pressed ? 500000 : 0)
-                 + (tile === root.lastDragged ? 0.5 : 0)
-            scale: root.flipMode ? Math.max(0.72, 1 - 0.07 * flipDepth) : 1
 
-            // 翻转时非选中平面用模糊表现纵深（不是消失）
-            readonly property bool blurOn: root.flipMode && flipDepth > 0 && root.planes.length > 1
-
-            x: model.cx * root.step + (root.flipMode ? 26 * flipDepth : 0)
-            y: model.cy * root.step + (root.flipMode ? 26 * flipDepth : 0)
+            // 透视纵深：中心向消失点收敛（矩阵同时做缩放+rotateY，等价真实 z 后退）
+            readonly property real recedeS: root.recedeS(flipDepth)
+            x: root.flipMode ? root.vpX + (model.cx * root.step + width / 2 - root.vpX) * recedeS - width / 2
+                             : model.cx * root.step
+            y: root.flipMode ? root.vpY + (model.cy * root.step + height / 2 - root.vpY) * recedeS - height / 2
+                             : model.cy * root.step
             width: model.cw * root.step - root.gap
             height: model.ch * root.step - root.gap
+            transform: Matrix4x4 { matrix: root.recedeMatrix(flipDepth, tile.width) }
 
             Behavior on x {
                 enabled: !dragArea.drag.active
@@ -277,17 +317,32 @@ Item {
                 enabled: !dragArea.drag.active
                 NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.1 }
             }
-            Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
             Behavior on opacity { NumberAnimation { duration: 200 } }
 
-            HoverHandler { id: tileHover }
+            HoverHandler {
+                id: tileHover
+                onHoveredChanged: {
+                    if (hovered)
+                        root.hoveredTile = tile
+                    else if (root.hoveredTile === tile)
+                        root.hoveredTile = null
+                }
+            }
+
+            // 翻转时非选中平面用模糊+压暗表现纵深（不是消失）
+            readonly property bool blurOn: root.flipMode && flipDepth > 0 && root.planes.length > 1
+            readonly property int mIndex: model.index
 
             // 拖拽共用状态与落格逻辑——须挂在委托根 tile 上：
             // dragArea 以 tile.beginDrag() 等限定名调用，挂在 card 里会 TypeError
             property bool moved: false
+            property int dragOrigCx: 0
+            property int dragOrigCy: 0
 
             function beginDrag() {
                 moved = false
+                tile.dragOrigCx = model.cx
+                tile.dragOrigCy = model.cy
                 tile.forceActiveFocus()
                 ghost.width = tile.width
                 ghost.height = tile.height
@@ -297,7 +352,6 @@ Item {
             function dragProgress() {
                 if (dragArea.drag.active) {
                     moved = true
-                    root.lastDragged = tile
                     tile.updateGhost()
                 }
             }
@@ -307,10 +361,29 @@ Item {
                 const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
                 const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
                 const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
-                tile.x = nx * root.step
-                tile.y = ny * root.step
-                model.cx = nx
-                model.cy = ny
+                // 同层互斥（docs/z-axis.md §1）：落点与同层/置顶磁贴重叠则弹回原格
+                let overlap = false
+                for (let i = 0; i < tilesModel.count && !overlap; i++) {
+                    if (i === model.index)
+                        continue
+                    const t = tilesModel.get(i)
+                    if (t.pinned !== true && (t.z || 0) !== (model.z || 0))
+                        continue
+                    if (nx < t.cx + t.cw && t.cx < nx + model.cw &&
+                        ny < t.cy + t.ch && t.cy < ny + model.ch)
+                        overlap = true
+                }
+                if (overlap) {
+                    tile.x = tile.dragOrigCx * root.step
+                    tile.y = tile.dragOrigCy * root.step
+                    model.cx = tile.dragOrigCx
+                    model.cy = tile.dragOrigCy
+                } else {
+                    tile.x = nx * root.step
+                    tile.y = ny * root.step
+                    model.cx = nx
+                    model.cy = ny
+                }
                 root.saveTiles()
             }
             function updateGhost() {
@@ -370,8 +443,10 @@ Item {
                 }
 
                 // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
+                // 覆盖面里禁拖拽：输入 mask 不会跟随拖动
                 MouseArea {
                     id: dragArea
+                    enabled: !root.overlayMode
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.RightButton
@@ -417,42 +492,8 @@ Item {
                     }
                 }
 
-                // 置顶徽章
-                Rectangle {
-                    visible: model.pinned === true
-                    anchors.right: parent.right
-                    anchors.top: parent.top
-                    anchors.margins: 4
-                    width: 16; height: 16; radius: 8
-                    color: "#7fd0ff"
-                    Text { anchors.centerIn: parent; text: "顶"; color: "#10141c"; font.pixelSize: 9; font.bold: true }
-                }
+                // 置顶徽章已按需求移除：置顶磁贴迁入覆盖面，无需特殊标识
 
-                // Super+滚轮：单磁贴沿 Z 微调（按平面边界步进）；其余滚轮放行给内容
-                MouseArea {
-                    anchors.fill: parent
-                    acceptedButtons: Qt.NoButton
-                    onWheel: (wheel) => {
-                        if (!(wheel.modifiers & Qt.MetaModifier) || !AppWindow.active
-                            || model.pinned === true || root.flipMode) {
-                            wheel.accepted = false
-                            return
-                        }
-                        const cur = model.z || 0
-                        let nz
-                        if (wheel.angleDelta.y > 0) {
-                            const next = root.planes.find(function (v) { return v > cur })
-                            nz = next !== undefined ? next : cur + 1
-                        } else {
-                            const prev = root.planes.slice().reverse().find(function (v) { return v < cur })
-                            nz = prev !== undefined ? prev : cur - 1
-                        }
-                        tilesModel.setProperty(index, "z", nz)
-                        root.zRevision++
-                        root.saveTiles()
-                        wheel.accepted = true
-                    }
-                }
             } // card
 
             // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深。
@@ -490,8 +531,9 @@ Item {
             readonly property bool selected: index === root.flipIndex
             readonly property var box: root.planeRect(index)
 
-            x: box ? box.x + 26 * depth - 8 : 0
-            y: box ? box.y + 26 * depth - 8 : 0
+            readonly property real cardS: root.recedeS(depth)
+            x: box ? root.vpX + (box.x + box.width / 2 - root.vpX) * cardS - box.width / 2 - 8 : 0
+            y: box ? root.vpY + (box.y + box.height / 2 - root.vpY) * cardS - box.height / 2 - 8 : 0
             width: box ? box.width + 16 : 0
             height: box ? box.height + 16 : 0
             visible: box !== null
@@ -501,6 +543,7 @@ Item {
             border.width: selected ? 3 : 2
             border.color: layerCardLine
             opacity: selected ? 1 : 0.75
+            transform: Matrix4x4 { matrix: root.recedeMatrix(depth, layerCard.width) }
 
             MouseArea {
                 anchors.fill: parent
@@ -1127,7 +1170,7 @@ Item {
             Item { width: 1; height: 4 }
 
             Text {
-                text: "Ctrl+N 添加磁贴 · 右键拖动磁贴 · Super+滚轮调层次 · Super+Tab 翻图层 · Ctrl+H 隐藏/显示"
+                text: "Ctrl+N 添加磁贴 · 右键拖动磁贴 · 悬停+Super+< > 调层次 · Super+Tab 翻图层 · Ctrl+H 隐藏/显示"
                 color: "#669fb0d0"; font.pixelSize: 12
                 width: parent.width
                 horizontalAlignment: Text.AlignHCenter
@@ -1182,6 +1225,39 @@ Item {
     Shortcut {
         sequence: "Ctrl+Q"
         onActivated: Qt.quit()
+    }
+
+    // ---- Z 轴：Super+< / Super+> 微调悬停磁贴层次（按平面边界步进）----
+    // ">" 拉近提升（更大更近），"<" 推远下沉；须先悬停磁贴且桌面持有焦点（2.4）
+    function nudgeTileZ(tileItem, up) {
+        if (!tileItem || root.flipMode || !AppWindow.active)
+            return
+        const i = tileItem.mIndex
+        const t = tilesModel.get(i)
+        if (t.pinned === true)
+            return
+        const cur = t.z || 0
+        let nz
+        if (up) {
+            const next = root.planes.find(function (v) { return v > cur })
+            nz = next !== undefined ? next : cur + 1
+        } else {
+            const prev = root.planes.slice().reverse().find(function (v) { return v < cur })
+            nz = prev !== undefined ? prev : cur - 1
+        }
+        tilesModel.setProperty(i, "z", nz)
+        root.zRevision++
+        root.saveTiles()
+    }
+    Shortcut {
+        sequence: "Meta+>"
+        enabled: root.hoveredTile !== null && !root.flipMode && AppWindow.active
+        onActivated: root.nudgeTileZ(root.hoveredTile, true)
+    }
+    Shortcut {
+        sequence: "Meta+<"
+        enabled: root.hoveredTile !== null && !root.flipMode && AppWindow.active
+        onActivated: root.nudgeTileZ(root.hoveredTile, false)
     }
 
     // ---- Z 轴：Super+Tab 图层翻转切换器（docs/z-axis.md 2.2）----
@@ -1350,11 +1426,7 @@ Item {
         return [p.x, p.y]
     }
 
-    Component.onCompleted: {
-        let data = {}, s = {}
-        try { data = JSON.parse(Store.load()) } catch (e) { data = {} }
-        try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }
-
+    function applySettings(s) {
         if (typeof s.tileOpacity === "number") root.tileOpacity = s.tileOpacity
         if (typeof s.tileRadius === "number") root.tileRadius = s.tileRadius
         if (typeof s.gap === "number") root.gap = s.gap
@@ -1362,7 +1434,13 @@ Item {
         if (typeof s.wallpaperUrl === "string") root.wallpaperUrl = s.wallpaperUrl
         if (typeof s.tilesHidden === "boolean") root.tilesHidden = s.tilesHidden
         if (typeof s.fgMode === "string") root.fgMode = s.fgMode
+    }
 
+    // 覆盖面实例据主面保存动作重载（含输入 mask 跟随）
+    function reloadTiles() {
+        tilesModel.clear()
+        let data = {}
+        try { data = JSON.parse(Store.load()) } catch (e) { data = {} }
         let defs = (data.tiles && data.tiles.length > 0) ? data.tiles : defaultTiles()
         // 旧版 tiles.json 里没有设置磁贴，补一枚
         if (!defs.some(function (t) { return t.type === "settings" }))
@@ -1374,33 +1452,71 @@ Item {
             appendTile(t)
         })
 
-        // 旧布局里没有后台磁贴的，自动补一块
-        if (!defs.some(function (t) { return t.type === "tasks" })) {
+        // 旧布局里没有后台磁贴的，自动补一块（覆盖面实例不补：只渲染置顶）
+        if (!root.overlayMode && !defs.some(function (t) { return t.type === "tasks" })) {
             const tz = topZ()
             const spot = findFreeSpot(2, 3, tz)
             if (spot)
                 appendTile({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3, z: tz,
                     text: "", glyph: "", label: "", command: "", icon: "" })
         }
+        syncOverlayMask()
+    }
 
-        Bridge.setup()
+    function syncOverlayMask() {
+        // 覆盖面窗口的输入区 = 置顶磁贴矩形并集；其余区域点击穿透到真实窗口
+        if (!root.overlayMode)
+            return
+        const rects = []
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true)
+                continue
+            rects.push({ x: t.cx * root.step, y: t.cy * root.step,
+                         w: t.cw * root.step - root.gap, h: t.ch * root.step - root.gap })
+        }
+        Store.applyMask(OverlayWindow, JSON.stringify(rects))
+    }
 
-        // 调试用：ruthis --open-settings 启动时直接弹出设置面板并自截窗口
-        if (Qt.application.arguments.indexOf("--open-settings") !== -1) {
-            settingsPopup.open()
-            Store.grabWindow(AppWindow)
+    Component.onCompleted: {
+        let data = {}, s = {}
+        try { data = JSON.parse(Store.load()) } catch (e) { data = {} }
+        try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }
+        applySettings(s)
+        reloadTiles()
+
+        if (!root.overlayMode)
+            Bridge.setup()
+
+        // 调试旗标只在主面生效（覆盖面无键盘焦点且不应弹面板）
+        if (!root.overlayMode) {
+            if (Qt.application.arguments.indexOf("--open-settings") !== -1) {
+                settingsPopup.open()
+                Store.grabWindow(AppWindow)
+            }
+            if (Qt.application.arguments.indexOf("--open-add") !== -1) {
+                addPopup.open()
+                Store.grabWindow(AppWindow)
+            }
+            if (Qt.application.arguments.indexOf("--open-flip") !== -1 && root.planes.length > 1) {
+                root.flipMode = true
+                root.flipIndex = root.planes.length - 1
+                flipOverlay.forceActiveFocus()
+                Store.grabWindow(AppWindow)
+            }
         }
-        // 调试用：--open-add 弹出添加磁贴面板（验证分类与图标）
-        if (Qt.application.arguments.indexOf("--open-add") !== -1) {
-            addPopup.open()
-            Store.grabWindow(AppWindow)
-        }
-        // 调试用：--open-flip 强制进入图层翻转模式（验证模糊级联）
-        if (Qt.application.arguments.indexOf("--open-flip") !== -1 && root.planes.length > 1) {
-            root.flipMode = true
-            root.flipIndex = root.planes.length - 1
-            flipOverlay.forceActiveFocus()
-            Store.grabWindow(AppWindow)
+    }
+    onWidthChanged: syncOverlayMask()
+    onHeightChanged: syncOverlayMask()
+
+    // 覆盖面跟随主面的保存动作刷新
+    Connections {
+        target: root.overlayMode ? Store : null
+        function onTilesChanged() { root.reloadTiles() }
+        function onSettingsChanged() {
+            let s = {}
+            try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }
+            root.applySettings(s)
         }
     }
 }

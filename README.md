@@ -10,7 +10,8 @@ ruthis 的本体只是一个**磁贴平台**（网格、拖拽、持久化、添
 
 - **磁贴网格**：Metro 式网格布局，右键拖动移动、右键点按属性菜单、尺寸可调
 - **Z 轴图层**（[docs/z-axis.md](docs/z-axis.md)）：同层网格互斥、跨层堆叠自由；
-  Super+滚轮调层次、Super+Tab 图层翻转切换器（Win7 Flip 式）、磁贴永久置顶
+  悬停+Super+< / > 调层次、Super+Tab 图层翻转切换器（Win7 Flip 式透视纵深）、
+  磁贴永久置顶（LayerTop 覆盖面，浮于一切窗口之上）
 - **插件化磁贴**：manifest.json + Tile.qml（组件式）或纯 manifest 声明式数据源
   （command / file / http / dbus），详见 [docs/tiles.md](docs/tiles.md)
 - **信息磁贴**：时钟（秒数可开）、系统（CPU/内存/网速/磁盘，可开关显示项）、
@@ -58,7 +59,7 @@ scripts/install-tiles.sh     # 安装/更新到 ~/.local/share/ruthis/tiles/
 | Ctrl+Q | 退出 |
 | 右键拖动磁贴 | 移动磁贴 |
 | 右键点按磁贴 | 属性菜单（永久置顶 / 属性 / 删除） |
-| 悬停磁贴 + Super+滚轮 | 沿 Z 轴提升/下沉（需桌面持有焦点，见 docs/z-axis.md） |
+| 悬停磁贴 + Super+< / > | 沿 Z 轴推远/拉近（需桌面持有焦点，见 docs/z-axis.md） |
 | Super+Tab | 图层翻转切换器：级联展开，连按切换，松开落定 |
 
 ## 数据与安装位置

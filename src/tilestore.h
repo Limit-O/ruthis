@@ -3,8 +3,13 @@
 #include <QDir>
 #include <QFile>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QObject>
 #include <QQuickWindow>
+#include <QRect>
+#include <QRegion>
 #include <QStandardPaths>
 #include <QTimer>
 
@@ -13,14 +18,21 @@ class TileStore : public QObject {
 public:
     using QObject::QObject;
 
+signals:
+    // 覆盖面实例据此跟随主面的保存动作刷新
+    void tilesChanged();
+    void settingsChanged();
+
+public:
     Q_INVOKABLE QString load() const
     {
         return read(configDir(), QStringLiteral("tiles.json"));
     }
 
-    Q_INVOKABLE void save(const QString &json) const
+    Q_INVOKABLE void save(const QString &json)
     {
         write(configDir(), QStringLiteral("tiles.json"), json);
+        emit tilesChanged();
     }
 
     Q_INVOKABLE QString loadSettings() const
@@ -28,9 +40,26 @@ public:
         return read(configDir(), QStringLiteral("settings.json"));
     }
 
-    Q_INVOKABLE void saveSettings(const QString &json) const
+    Q_INVOKABLE void saveSettings(const QString &json)
     {
         write(configDir(), QStringLiteral("settings.json"), json);
+        emit settingsChanged();
+    }
+
+    // 覆盖面窗口输入区 = 置顶磁贴矩形并集；之外所有点击穿透到真实窗口
+    Q_INVOKABLE void applyMask(QObject *windowObj, const QString &json)
+    {
+        auto *w = qobject_cast<QWindow *>(windowObj);
+        if (!w)
+            return;
+        QRegion region;
+        const QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+        for (const auto &v : doc.array()) {
+            const QJsonObject r = v.toObject();
+            region += QRect(r.value("x").toInt(), r.value("y").toInt(),
+                            r.value("w").toInt(), r.value("h").toInt());
+        }
+        w->setMask(region);
     }
 
     // 本会话的终端会吞掉 QML 应用的 stdout/stderr，调试信息改走文件

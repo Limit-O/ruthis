@@ -72,6 +72,10 @@ int main(int argc, char *argv[])
         QStringLiteral("test-menu"),
         QStringLiteral("调试：合成右键打开菜单并点按置顶项，自截两帧验证"));
     parser.addOption(testMenuOption);
+    const QCommandLineOption testOverlayOption(
+        QStringLiteral("test-overlay"),
+        QStringLiteral("调试：窗口模式下也创建置顶覆盖面（验证穿透与渲染）"));
+    parser.addOption(testOverlayOption);
     parser.process(app);
     const bool desktopMode = parser.isSet(desktopOption);
 
@@ -106,6 +110,7 @@ int main(int argc, char *argv[])
     view.rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
     view.rootContext()->setContextProperty(QStringLiteral("Sources"), &tileSources);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
+    view.rootContext()->setContextProperty(QStringLiteral("OverlayMode"), false);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
 
     if (desktopMode) {
@@ -160,6 +165,57 @@ int main(int argc, char *argv[])
     } else {
         view.resize(1280, 800);
         view.show();
+    }
+
+    // ---- 置顶覆盖面（docs/z-axis.md 2.5/§6）：LayerTop 承载置顶磁贴，浮于一切窗口 ----
+    // 与主面共享后端单例，独立引擎加载同一 Main.qml（OverlayMode=true，无壁纸只渲染置顶）；
+    // 输入经 mask 限定在置顶磁贴矩形内，其余区域点击穿透到真实窗口
+    if (desktopMode || parser.isSet(testOverlayOption)) {
+        auto *overlay = new QQuickView();
+        if (desktopMode) {
+            auto *olay = LayerShellQt::Window::get(overlay);
+            olay->setLayer(LayerShellQt::Window::LayerTop);
+            olay->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop)
+                             | LayerShellQt::Window::AnchorBottom
+                             | LayerShellQt::Window::AnchorLeft
+                             | LayerShellQt::Window::AnchorRight);
+            olay->setExclusiveZone(-1);
+            // 不参与键盘焦点分配：磁贴交互只靠鼠标（经 mask），打字永不被劫持
+            olay->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
+        } else {
+            overlay->setPosition(60, 60);
+            overlay->resize(1280, 800);
+        }
+        QSurfaceFormat ofmt = overlay->format();
+        ofmt.setAlphaBufferSize(8);
+        overlay->setFormat(ofmt);
+        overlay->setColor(Qt::transparent);
+        overlay->setTitle(QStringLiteral("ruthis overlay"));
+        overlay->setResizeMode(QQuickView::SizeRootObjectToView);
+        overlay->rootContext()->setContextProperty(QStringLiteral("OverlayMode"), true);
+        overlay->rootContext()->setContextProperty(QStringLiteral("OverlayWindow"), overlay);
+        overlay->rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Store"), &store);
+        overlay->rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Apps"), &appList);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Bridge"), &bridge);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Media"), &mediaInfo);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Audio"), &audioInfo);
+        overlay->rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
+        overlay->rootContext()->setContextProperty(QStringLiteral("Sources"), &tileSources);
+        overlay->engine()->addImageProvider(QStringLiteral("icons"), new IconProvider);
+        overlay->setSource(source);
+        if (desktopMode)
+            overlay->showFullScreen();
+        else
+            overlay->show();
+        if (parser.isSet(testOverlayOption)) {
+            QTimer::singleShot(2000, overlay, [overlay]() {
+                overlay->grabWindow().save(QStringLiteral("/tmp/ruthis-overlay.png"));
+                QCoreApplication::quit();
+            });
+        }
     }
 
     // --test-menu：向窗口投递真实鼠标事件，验证"右键→菜单→置顶"整条链路
