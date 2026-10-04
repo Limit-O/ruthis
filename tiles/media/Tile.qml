@@ -15,6 +15,8 @@ Item {
     component MediaIcon: Canvas {
         property string kind: "play"
         property color color: "#ffffff"
+        // 未声明会让实例化处 size: 赋值直接报错、整个磁贴加载失败
+        property real size: 24
         width: size; height: size
         onKindChanged: requestPaint()
         onColorChanged: requestPaint()

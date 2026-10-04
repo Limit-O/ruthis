@@ -65,6 +65,30 @@ Item {
         root.saveTiles()
         root.flipMode = false
     }
+    // 翻转模式的层标识色：按平面序号黄金分割取相——同层同色，相邻层色相错开
+    function planeColor(idx, selected) {
+        const hue = (idx * 0.61803398875) % 1
+        return Qt.hsla(hue, selected ? 0.72 : 0.5, selected ? 0.6 : 0.52, 1)
+    }
+
+    // 第 idx 平面全部磁贴的包围盒（像素；zRevision 驱动重算，与 planes 同一技巧）
+    function planeRect(idx) {
+        void zRevision
+        const z = planes[idx]
+        let minCx = 1e9, minCy = 1e9, maxCx = -1, maxCy = -1
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned === true || (t.z || 0) !== z)
+                continue
+            minCx = Math.min(minCx, t.cx); minCy = Math.min(minCy, t.cy)
+            maxCx = Math.max(maxCx, t.cx + t.cw); maxCy = Math.max(maxCy, t.cy + t.ch)
+        }
+        if (maxCx < 0)
+            return null
+        return { x: minCx * step, y: minCy * step,
+                 width: (maxCx - minCx) * step - gap, height: (maxCy - minCy) * step - gap }
+    }
+
     function cancelFlip() { root.flipMode = false }
 
     // 平台服务集：注入每个磁贴插件（tiles/<type>/Tile.qml 的 api 属性）
@@ -377,21 +401,13 @@ Item {
                     anchors.fill: parent
                     anchors.margins: 12   // 全局内容安全区：插件内容不贴边框
                     source: TileRegistry.source(model.type)
-                    onLoaded: tileHost.item.api = root.api
-                }
-                Binding {
-                    target: tileHost.item
-                    property: "cfg"
-                    value: cfg
-                    when: tileHost.status === Loader.Ready
-                }
-                // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
-                Binding {
-                    target: tileHost.item
-                    property: "ds"
-                    value: Sources.forType(model.type)
-                    when: tileHost.status === Loader.Ready && tileHost.item !== null
-                          && ("ds" in tileHost.item)
+                    onLoaded: {
+                        tileHost.item.api = root.api
+                        tileHost.item.cfg = card.cfg
+                        // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
+                        if ("ds" in tileHost.item)
+                            tileHost.item.ds = Sources.forType(model.type)
+                    }
                 }
 
                 // 置顶徽章
@@ -441,6 +457,44 @@ Item {
                 blur: Math.min(1, 0.06 + 0.08 * tile.flipDepth)
                 blurMax: 32
                 autoPaddingEnabled: true
+            }
+
+            // 翻转时点按模糊磁贴 = 选中其所在平面（Win7 Flip 语义：点谁选谁）
+            MouseArea {
+                anchors.fill: parent
+                enabled: root.flipMode && tile.blurOn
+                visible: enabled
+                onClicked: root.flipIndex = tile.planeIdx
+            }
+        }
+    }
+
+    // ---- 翻转模式：每层一张整体透明卡，包住该层全部磁贴（层色描边，点卡选层）----
+    // 卡 z 取"本层磁贴 z - 1"：垫在自己层磁贴之下、更深内容之上，玻璃片式的层语言
+    Repeater {
+        model: root.flipMode ? root.planes.length : 0
+
+        delegate: Rectangle {
+            id: layerCard
+            required property int index
+            readonly property int depth: (index - root.flipIndex + root.planes.length) % root.planes.length
+            readonly property bool selected: index === root.flipIndex
+            readonly property var box: root.planeRect(index)
+
+            x: box ? box.x + 26 * depth - 8 : 0
+            y: box ? box.y + 26 * depth - 8 : 0
+            width: box ? box.width + 16 : 0
+            height: box ? box.height + 16 : 0
+            visible: box !== null
+            z: (root.planes.length - depth) * 100 - 1
+            radius: root.tileRadius + 8
+            color: Qt.hsla((index * 0.61803398875) % 1, 0.55, 0.5, selected ? 0.16 : 0.08)
+            border.width: selected ? 3 : 2
+            border.color: root.planeColor(index, selected)
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked: root.flipIndex = layerCard.index
             }
         }
     }
@@ -1152,7 +1206,7 @@ Item {
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 48
             text: "图层 " + (root.flipIndex + 1) + " / " + root.planes.length
-                  + "  ·  Tab 切换  ·  松开 Super 落定  ·  Esc 取消"
+                  + "  ·  同色同层  ·  Tab 切换  ·  松开 Super 落定  ·  Esc 取消"
             color: "#f4f7ff"
             font.pixelSize: 14
             style: Text.Outline

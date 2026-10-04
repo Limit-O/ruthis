@@ -19,8 +19,19 @@
 #include "tileregistry.h"
 #include "windowsbridge.h"
 
+// 本会话的终端会吞掉 stderr，QML/Qt 警告统一改写进调试日志文件
+static void fileMessageHandler(QtMsgType type, const QMessageLogContext &,
+                               const QString &msg)
+{
+    static const char *levels[] = { "debug", "warn", "crit", "fatal" };
+    QFile f(QStringLiteral("/tmp/ruthis-debug.log"));
+    if (f.open(QIODevice::WriteOnly | QIODevice::Append))
+        f.write(QStringLiteral("[%1] %2\n").arg(QLatin1String(levels[type]), msg).toUtf8());
+}
+
 int main(int argc, char *argv[])
 {
+    qInstallMessageHandler(fileMessageHandler);
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("ruthis"));
 
