@@ -26,12 +26,6 @@ Item {
     // 玻璃质感拆分可调：顶部高光渐变与卡片描边各自开关
     property bool glassHighlight: true
     property bool glassBorder: true
-    // 覆盖面：拖拽进行中（输入区临时放开为全屏，否则 mask 会截断拖拽事件）
-    property bool overlayDragActive: false
-    // 弹窗或拖拽期间覆盖面输入区放开为全屏
-    readonly property bool overlayInputFull: overlayDragActive || tileMenu.opened
-        || tileProps.opened || addPopup.opened || settingsPopup.opened
-    onOverlayInputFullChanged: syncOverlayMask()
     readonly property color tileFg: fgMode === "light" ? "#f4f7ff"
         : fgMode === "dark" ? "#151a22"
         : (cardEffectiveLum() > 0.5 ? "#151a22" : "#f4f7ff")
@@ -44,8 +38,6 @@ Item {
     property bool flipMode: false
     property int flipIndex: 0
     property int zRevision: 0
-    // 覆盖面模式（本实例是置顶磁贴的 LayerTop 宿主窗口）
-    readonly property bool overlayMode: OverlayMode === true
     // 悬停中的磁贴：Super+</> 微调它的层次
     property Item hoveredTile: null
 
@@ -254,7 +246,7 @@ Item {
     // 覆盖面模式必须全透明，露出其下的真实窗口
     Rectangle {
         anchors.fill: parent
-        visible: root.wallpaperUrl === "" && !root.overlayMode
+        visible: root.wallpaperUrl === ""
         gradient: Gradient {
             GradientStop { position: 0.0; color: "#1c2333" }
             GradientStop { position: 1.0; color: "#0c0f16" }
@@ -263,7 +255,7 @@ Item {
 
     Image {
         anchors.fill: parent
-        visible: root.wallpaperUrl !== "" && !root.overlayMode
+        visible: root.wallpaperUrl !== ""
         source: root.wallpaperUrl
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
@@ -290,8 +282,8 @@ Item {
 
             // 隐藏时全部隐去（含设置磁贴），Ctrl+H 唯一入口。
             // 覆盖面模式只渲染置顶磁贴；桌面模式下置顶磁贴迁入覆盖面，主面不再渲染
-            visible: !root.tilesHidden
-                && (root.overlayMode ? isPinned : !(isPinned && DesktopMode))
+            // 置顶磁贴由 PinnedSurfaces 的独立小窗渲染，主面不画（DesktopMode 下）
+            visible: !root.tilesHidden && !(isPinned && DesktopMode)
 
             // Z 轴：pinned 恒在最上且不参与翻转（层级巡航不影响置顶，docs/z-axis.md 2.5）；
             // 常态渲染 z 以最低平面归一——负 z 的磁贴不许沉到壁纸（z=0 前序兄弟）之下
@@ -352,7 +344,6 @@ Item {
                 moved = false
                 tile.dragOrigCx = model.cx
                 tile.dragOrigCy = model.cy
-                root.overlayDragActive = root.overlayMode
                 tile.forceActiveFocus()
                 ghost.width = tile.width
                 ghost.height = tile.height
@@ -367,7 +358,6 @@ Item {
             }
             function dragEnded() {
                 ghost.visible = false
-                root.overlayDragActive = false
                 const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
                 const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
                 const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
@@ -1472,7 +1462,7 @@ Item {
         if (typeof s.glassBorder === "boolean") root.glassBorder = s.glassBorder
     }
 
-    // 覆盖面实例据主面保存动作重载（含输入 mask 跟随）
+    // 重载磁贴模型（初次加载与外部保存感知共用）
     function reloadTiles() {
         tilesModel.clear()
         let data = {}
@@ -1488,35 +1478,31 @@ Item {
             appendTile(t)
         })
 
-        // 旧布局里没有后台磁贴的，自动补一块（覆盖面实例不补：只渲染置顶）
-        if (!root.overlayMode && !defs.some(function (t) { return t.type === "tasks" })) {
+        // 旧布局里没有后台磁贴的，自动补一块
+        if (!defs.some(function (t) { return t.type === "tasks" })) {
             const tz = topZ()
             const spot = findFreeSpot(2, 3, tz)
             if (spot)
                 appendTile({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3, z: tz,
                     text: "", glyph: "", label: "", command: "", icon: "" })
         }
-        syncOverlayMask()
     }
 
-    function syncOverlayMask() {        // 覆盖面窗口输入区 = 置顶磁贴矩形并集；其余区域点击穿透到真实窗口。
-        // 拖拽/弹窗期间放开为全屏（mask 截断拖拽与菜单外点击）
-        if (!root.overlayMode)
-            return
-        const rects = []
-        if (root.overlayDragActive || tileMenu.opened || tileProps.opened
-                || addPopup.opened || settingsPopup.opened) {
-            rects.push({ x: 0, y: 0, w: root.width, h: root.height })
-        } else {
-            for (let i = 0; i < tilesModel.count; i++) {
-                const t = tilesModel.get(i)
-                if (t.pinned !== true)
-                    continue
-                rects.push({ x: t.cx * root.step, y: t.cy * root.step,
-                             w: t.cw * root.step - root.gap, h: t.ch * root.step - root.gap })
-            }
+    // 置顶小窗同步（PinnedSurfaces：每枚置顶磁贴一个 LayerTop 窗口）
+    function syncPinnedSurfaces() {
+        const list = []
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true)
+                continue
+            const rest = JSON.parse(JSON.stringify(t))
+            delete rest.pinned
+            list.push({ id: String(t.type) + "#" + String(i),
+                        x: t.cx * root.step, y: t.cy * root.step,
+                        w: t.cw * root.step - root.gap, h: t.ch * root.step - root.gap,
+                        json: JSON.stringify(rest), settings: Store.loadSettings() })
         }
-        Store.applyMask(OverlayWindow, JSON.stringify(rects))
+        PinnedSurfaces.sync(list)
     }
 
     Component.onCompleted: {
@@ -1525,34 +1511,27 @@ Item {
         try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }
         applySettings(s)
         reloadTiles()
+        syncPinnedSurfaces()
 
-        if (!root.overlayMode)
-            Bridge.setup()
+        Bridge.setup()
 
-        // 调试旗标只在主面生效（覆盖面无键盘焦点且不应弹面板）
-        if (!root.overlayMode) {
-            if (Qt.application.arguments.indexOf("--open-settings") !== -1) {
-                settingsPopup.open()
-                Store.grabWindow(AppWindow)
-            }
-            if (Qt.application.arguments.indexOf("--open-add") !== -1) {
-                addPopup.open()
-                Store.grabWindow(AppWindow)
-            }
-            if (Qt.application.arguments.indexOf("--open-flip") !== -1 && root.planes.length > 1) {
-                root.flipMode = true
-                root.flipIndex = root.planes.length - 1
-                flipOverlay.forceActiveFocus()
-                Store.grabWindow(AppWindow)
-            }
+        if (Qt.application.arguments.indexOf("--open-settings") !== -1) {
+            settingsPopup.open()
+            Store.grabWindow(AppWindow)
+        }
+        if (Qt.application.arguments.indexOf("--open-add") !== -1) {
+            addPopup.open()
+            Store.grabWindow(AppWindow)
+        }
+        if (Qt.application.arguments.indexOf("--open-flip") !== -1 && root.planes.length > 1) {
+            root.flipMode = true
+            root.flipIndex = root.planes.length - 1
+            flipOverlay.forceActiveFocus()
+            Store.grabWindow(AppWindow)
         }
     }
-    onWidthChanged: syncOverlayMask()
-    onHeightChanged: syncOverlayMask()
 
-    // 覆盖面跟随主面的保存动作刷新；主面也要感知覆盖面的保存（如取消置顶），
-    // 否则覆盖面撤下的磁贴在主面仍是隐藏的置顶状态——磁贴会凭空消失。
-    // 双方都只在"文件与本地状态不一致"（外部保存）时重载，自己的保存不触发重建
+    // 磁贴/外观变化：置顶小窗跟随（settingsChanged 同步外观，tilesChanged 感知外部保存）
     Connections {
         target: Store
         function onTilesChanged() {
@@ -1561,11 +1540,26 @@ Item {
                 arr.push(tilesModel.get(i))
             if (JSON.stringify({ tiles: arr }) !== Store.load())
                 root.reloadTiles()
+            root.syncPinnedSurfaces()
         }
         function onSettingsChanged() {
             let s = {}
             try { s = JSON.parse(Store.loadSettings()) } catch (e) { s = {} }
             root.applySettings(s)
+            root.syncPinnedSurfaces()
+        }
+    }
+
+    // 小窗上右键取消置顶 → 回主面数据
+    Connections {
+        target: PinnedSurfaces
+        function onUnpinRequested(id) {
+            const i = parseInt(id.slice(id.indexOf("#") + 1), 10)
+            if (isNaN(i) || i < 0 || i >= tilesModel.count)
+                return
+            tilesModel.setProperty(i, "pinned", false)
+            root.zRevision++
+            root.saveTiles()
         }
     }
 }

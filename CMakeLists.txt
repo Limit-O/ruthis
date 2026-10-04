@@ -15,6 +15,7 @@ qt_add_executable(ruthis
     src/datasource.h
     src/launcher.h
     src/mediainfo.h
+    src/pinnedsurfaces.h
     src/tilestore.h
     src/sysinfo.h
     src/iconprovider.h
@@ -22,7 +23,7 @@ qt_add_executable(ruthis
     src/windowsbridge.h
 )
 
-qt_add_resources(ruthis "qml" PREFIX "/" FILES src/Main.qml)
+qt_add_resources(ruthis "qml" PREFIX "/" FILES src/Main.qml src/TileHost.qml)
 qt_add_resources(ruthis "kwin" PREFIX "/" FILES kwin/kwin-windows.js)
 
 # 磁贴即插件：官方磁贴不编入二进制，与第三方磁贴同一机制（安装到磁贴目录，

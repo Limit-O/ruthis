@@ -11,7 +11,7 @@ ruthis 的本体只是一个**磁贴平台**（网格、拖拽、持久化、添
 - **磁贴网格**：Metro 式网格布局，右键拖动移动、右键点按属性菜单、尺寸可调
 - **Z 轴图层**（[docs/z-axis.md](docs/z-axis.md)）：同层网格互斥、跨层堆叠自由；
   悬停+Super+滚轮 / [ ] 调层次、Super+Tab 图层翻转切换器（Win7 Flip 式透视纵深）、
-  磁贴永久置顶（LayerTop 覆盖面，浮于一切窗口之上）
+  磁贴永久置顶（LayerTop 独立小窗浮于一切窗口之上，右键取消置顶）
 - **插件化磁贴**：manifest.json + Tile.qml（组件式）或纯 manifest 声明式数据源
   （command / file / http / dbus），详见 [docs/tiles.md](docs/tiles.md)
 - **信息磁贴**：时钟（秒数可开）、系统（CPU/内存/网速/磁盘，可开关显示项）、
@@ -42,7 +42,6 @@ build/ruthis --open-settings   # 启动即打开设置面板（调试）
 build/ruthis --open-add        # 启动即打开添加磁贴面板（调试）
 build/ruthis --open-flip       # 启动即进入图层翻转模式并自截帧（调试）
 build/ruthis --test-menu       # 合成鼠标事件回归右键菜单链路（调试）
-build/ruthis --test-overlay    # 窗口模式下创建置顶覆盖面（调试）
 ```
 
 官方磁贴需要安装到磁贴目录（外置化后与第三方磁贴同机制）：

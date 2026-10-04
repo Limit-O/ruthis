@@ -18,6 +18,7 @@
 #include "iconprovider.h"
 #include "launcher.h"
 #include "mediainfo.h"
+#include "pinnedsurfaces.h"
 #include "sysinfo.h"
 #include "tilestore.h"
 #include "tileregistry.h"
@@ -72,14 +73,6 @@ int main(int argc, char *argv[])
         QStringLiteral("test-menu"),
         QStringLiteral("调试：合成右键打开菜单并点按置顶项，自截两帧验证"));
     parser.addOption(testMenuOption);
-    const QCommandLineOption testOverlayOption(
-        QStringLiteral("test-overlay"),
-        QStringLiteral("调试：窗口模式下也创建置顶覆盖面（验证穿透与渲染）"));
-    parser.addOption(testOverlayOption);
-    const QCommandLineOption testUnpinOption(
-        QStringLiteral("test-unpin"),
-        QStringLiteral("调试：在覆盖面上合成右键+点置顶项，验证取消置顶与主面同步"));
-    parser.addOption(testUnpinOption);
     parser.process(app);
     const bool desktopMode = parser.isSet(desktopOption);
 
@@ -104,6 +97,10 @@ int main(int argc, char *argv[])
         tileRegistry.addSearchDir(QStringLiteral(RUTHIS_SOURCE_DIR)
                                   + QStringLiteral("/tiles"));
     TileSources tileSources(&tileRegistry);
+    // 置顶覆盖面管理器：每枚置顶磁贴一个 LayerTop 小窗（浮于一切窗口之上，
+    // 输入天然限定在磁贴矩形内，不依赖全屏透明层+输入 mask）
+    PinnedSurfaces pinnedSurfaces(desktopMode, { &launcher, &store, &sysInfo, &appList,
+        &bridge, &mediaInfo, &audioInfo, &tileRegistry, &tileSources });
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);
     view.rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
@@ -114,8 +111,8 @@ int main(int argc, char *argv[])
     view.rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
     view.rootContext()->setContextProperty(QStringLiteral("Sources"), &tileSources);
     view.rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
-    view.rootContext()->setContextProperty(QStringLiteral("OverlayMode"), false);
     view.rootContext()->setContextProperty(QStringLiteral("AppWindow"), &view);
+    view.rootContext()->setContextProperty(QStringLiteral("PinnedSurfaces"), &pinnedSurfaces);
 
     if (desktopMode) {
         // 必须在窗口 show 之前接管，QQuickView 由此变成 layer-shell surface
@@ -169,102 +166,6 @@ int main(int argc, char *argv[])
     } else {
         view.resize(1280, 800);
         view.show();
-    }
-
-    // ---- 置顶覆盖面（docs/z-axis.md 2.5/§6）：LayerTop 承载置顶磁贴，浮于一切窗口 ----
-    // 与主面共享后端单例，独立引擎加载同一 Main.qml（OverlayMode=true，无壁纸只渲染置顶）；
-    // 输入经 mask 限定在置顶磁贴矩形内，其余区域点击穿透到真实窗口
-    QQuickView *overlayView = nullptr;
-    if (desktopMode || parser.isSet(testOverlayOption) || parser.isSet(testUnpinOption)) {
-        auto *overlay = new QQuickView();
-        overlayView = overlay;
-        if (desktopMode) {
-            auto *olay = LayerShellQt::Window::get(overlay);
-            olay->setLayer(LayerShellQt::Window::LayerTop);
-            olay->setAnchors(LayerShellQt::Window::Anchors(LayerShellQt::Window::AnchorTop)
-                             | LayerShellQt::Window::AnchorBottom
-                             | LayerShellQt::Window::AnchorLeft
-                             | LayerShellQt::Window::AnchorRight);
-            olay->setExclusiveZone(-1);
-            // 不参与键盘焦点分配：磁贴交互只靠鼠标（经 mask），打字永不被劫持
-            olay->setKeyboardInteractivity(LayerShellQt::Window::KeyboardInteractivityNone);
-        } else {
-            overlay->setPosition(60, 60);
-            overlay->resize(1280, 800);
-        }
-        QSurfaceFormat ofmt = overlay->format();
-        ofmt.setAlphaBufferSize(8);
-        overlay->setFormat(ofmt);
-        overlay->setColor(Qt::transparent);
-        overlay->setTitle(QStringLiteral("ruthis overlay"));
-        overlay->setResizeMode(QQuickView::SizeRootObjectToView);
-        overlay->rootContext()->setContextProperty(QStringLiteral("OverlayMode"), true);
-        overlay->rootContext()->setContextProperty(QStringLiteral("OverlayWindow"), overlay);
-        overlay->rootContext()->setContextProperty(QStringLiteral("DesktopMode"), desktopMode);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Store"), &store);
-        overlay->rootContext()->setContextProperty(QStringLiteral("SysInfo"), &sysInfo);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Apps"), &appList);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Bridge"), &bridge);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Media"), &mediaInfo);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Audio"), &audioInfo);
-        overlay->rootContext()->setContextProperty(QStringLiteral("TileRegistry"), &tileRegistry);
-        overlay->rootContext()->setContextProperty(QStringLiteral("Sources"), &tileSources);
-        overlay->engine()->addImageProvider(QStringLiteral("icons"), new IconProvider);
-        overlay->setSource(source);
-        if (desktopMode)
-            overlay->showFullScreen();
-        else
-            overlay->show();
-        if (parser.isSet(testOverlayOption)) {
-            QTimer::singleShot(2000, overlay, [overlay]() {
-                overlay->grabWindow().save(QStringLiteral("/tmp/ruthis-overlay.png"));
-                QCoreApplication::quit();
-            });
-        }
-    }
-
-    // --test-unpin：在覆盖面上合成"右键置顶磁贴→菜单点永久置顶"，验证取消置顶
-    // 以及主面感知外部保存（磁贴应回到主面渲染而非消失）
-    if (parser.isSet(testUnpinOption) && overlayView) {
-        QQuickView *ov = overlayView;
-        const auto callQmlOn = [](QQuickView *v, const char *sig) -> QVariant {
-            QVariant ret;
-            QQuickItem *ri = v->rootObject();
-            const int idx = ri->metaObject()->indexOfMethod(sig);
-            if (idx >= 0)
-                ri->metaObject()->method(idx).invoke(ri, Q_RETURN_ARG(QVariant, ret));
-            return ret;
-        };
-        const auto clickOn = [](QQuickView *v, const QPointF &p, Qt::MouseButton button) {
-            QMouseEvent press(QEvent::MouseButtonPress, p, p, button, button, Qt::NoModifier);
-            QGuiApplication::sendEvent(v, &press);
-            QMouseEvent release(QEvent::MouseButtonRelease, p, p, button, Qt::NoButton, Qt::NoModifier);
-            QGuiApplication::sendEvent(v, &release);
-        };
-        QTimer::singleShot(800, ov, [&]() {
-            const QVariantList c = callQmlOn(ov, "debugPinnedTileCenter()").toList();
-            if (c.size() != 2) {
-                qWarning() << "没有置顶磁贴可测";
-                QCoreApplication::quit();
-                return;
-            }
-            clickOn(ov, QPointF(c[0].toReal(), c[1].toReal()), Qt::RightButton);
-            QTimer::singleShot(500, ov, [&]() {
-                const QVariantList b = callQmlOn(ov, "debugPinBtnCenter()").toList();
-                if (b.size() != 2) {
-                    qWarning() << "覆盖面菜单未打开";
-                    QCoreApplication::quit();
-                    return;
-                }
-                clickOn(ov, QPointF(b[0].toReal(), b[1].toReal()), Qt::LeftButton);
-                QTimer::singleShot(600, ov, [&]() {
-                    view.grabWindow().save(QStringLiteral("/tmp/ruthis-unpin-main.png"));
-                    ov->grabWindow().save(QStringLiteral("/tmp/ruthis-unpin-overlay.png"));
-                    QCoreApplication::quit();
-                });
-            });
-        });
     }
 
     // --test-menu：向窗口投递真实鼠标事件，验证"右键→菜单→置顶"整条链路
