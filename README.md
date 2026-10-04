@@ -75,6 +75,7 @@ scripts/install-tiles.sh     # 安装/更新到 ~/.local/share/ruthis/tiles/
 
 - [docs/tiles.md](docs/tiles.md) — 磁贴制作与使用指南（manifest 全字段、api 契约、声明式磁贴、示例）
 - [docs/z-axis.md](docs/z-axis.md) — Z 轴技术总纲（图层/纵深模型、滚轮与 Super+Tab 交互、窗口磁贴化衔接）
+- [docs/commits.md](docs/commits.md) — 提交规范（何时提交、信息格式、历史整理）
 
 ## 目录结构
 
