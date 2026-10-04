@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
-import QtQuick.Effects
 
 Item {
     id: root
@@ -337,8 +336,9 @@ Item {
                 }
             }
 
-            // 翻转时非选中平面用模糊+压暗表现纵深（不是消失）
-            readonly property bool blurOn: root.flipMode && flipDepth > 0 && root.planes.length > 1
+            // 翻转时非选中平面整体降透明（纵深靠透视收敛+降透明，不用模糊）
+            readonly property bool flipped: root.flipMode && flipDepth > 0 && root.planes.length > 1
+            opacity: flipped ? Math.max(0.35, 1 - 0.13 * flipDepth) : 1
             readonly property int mIndex: model.index
 
             // 拖拽共用状态与落格逻辑——须挂在委托根 tile 上：
@@ -409,12 +409,10 @@ Item {
                 tileMenu.open()
             }
 
-            // 卡片内容容器：模糊时整卡交给 MultiEffect 绘制，原体隐藏
-            // （Qt 6.11 实测：QML 自定义 ShaderEffect 静默不渲染，须用内置 MultiEffect）
+            // 卡片内容容器：透视翻转时随整卡降透明
             Item {
                 id: card
                 anchors.fill: parent
-                visible: !tile.blurOn
 
                 // 磁贴下的假投影已按需求移除（黑幕观感）；高度感交给透视纵深
 
@@ -509,23 +507,10 @@ Item {
                 }
             } // card
 
-            // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深。
-            // 远层轻模糊+压暗（保持可辨识），选中层=交互层保持锐利全亮
-            MultiEffect {
-                anchors.fill: card
-                source: card
-                visible: tile.blurOn
-                blurEnabled: tile.blurOn
-                blur: Math.min(1, 0.04 + 0.05 * tile.flipDepth)
-                blurMax: 16
-                brightness: 1 - Math.min(0.35, 0.06 * tile.flipDepth)
-                autoPaddingEnabled: true
-            }
-
-            // 翻转时点按模糊磁贴 = 选中其所在平面（Win7 Flip 语义：点谁选谁）
+            // 翻转时点按更深的磁贴 = 选中其所在平面（Win7 Flip 语义：点谁选谁）
             MouseArea {
                 anchors.fill: parent
-                enabled: root.flipMode && tile.blurOn
+                enabled: root.flipMode && tile.flipDepth > 0
                 visible: enabled
                 onClicked: root.flipIndex = tile.planeIdx
             }
