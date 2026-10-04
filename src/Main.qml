@@ -36,6 +36,8 @@ Item {
     property bool flipMode: false
     property int flipIndex: 0
     property int zRevision: 0
+    // 最近拖动的磁贴：渲染序在本层置顶（同层重叠时谁后拖谁在上）
+    property Item lastDragged: null
     // 非 pinned 磁贴的全部 z 平面（升序去重）；zRevision 变化时重算
     readonly property var planes: {
         void zRevision
@@ -234,6 +236,7 @@ Item {
     ListModel { id: tilesModel }
 
     Repeater {
+        id: tilesRepeater
         model: tilesModel
 
         delegate: Item {
@@ -252,7 +255,10 @@ Item {
 
             z: isPinned ? 1000000
                : root.flipMode ? (root.planes.length - flipDepth) * 100
+               // 拖动中抬到全部平面之上；最近拖动者在同层置顶（同层重叠可用的手段）
                : (model.z || 0) - (root.planes.length ? root.planes[0] : 0)
+                 + (dragArea.pressed ? 500000 : 0)
+                 + (tile === root.lastDragged ? 0.5 : 0)
             scale: root.flipMode ? Math.max(0.72, 1 - 0.07 * flipDepth) : 1
 
             // 翻转时非选中平面用模糊表现纵深（不是消失）
@@ -275,6 +281,50 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 200 } }
 
             HoverHandler { id: tileHover }
+
+            // 拖拽共用状态与落格逻辑——须挂在委托根 tile 上：
+            // dragArea 以 tile.beginDrag() 等限定名调用，挂在 card 里会 TypeError
+            property bool moved: false
+
+            function beginDrag() {
+                moved = false
+                tile.forceActiveFocus()
+                ghost.width = tile.width
+                ghost.height = tile.height
+                tile.updateGhost()
+                ghost.visible = true
+            }
+            function dragProgress() {
+                if (dragArea.drag.active) {
+                    moved = true
+                    root.lastDragged = tile
+                    tile.updateGhost()
+                }
+            }
+            function dragEnded() {
+                ghost.visible = false
+                const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
+                const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
+                const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
+                const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
+                tile.x = nx * root.step
+                tile.y = ny * root.step
+                model.cx = nx
+                model.cy = ny
+                root.saveTiles()
+            }
+            function updateGhost() {
+                ghost.x = Math.round(tile.x / root.step) * root.step
+                ghost.y = Math.round(tile.y / root.step) * root.step
+            }
+            function openTileMenu(mouse) {
+                const p = tile.mapToItem(root, mouse.x, mouse.y)
+                tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
+                tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
+                tileMenu.tileIndex = model.index
+                tileMenu.tilePinned = model.pinned === true
+                tileMenu.open()
+            }
 
             // 卡片内容容器：模糊时整卡交给 MultiEffect 绘制，原体隐藏
             // （Qt 6.11 实测：QML 自定义 ShaderEffect 静默不渲染，须用内置 MultiEffect）
@@ -319,47 +369,6 @@ Item {
                     }
                 }
 
-                // 拖拽共用状态与落格逻辑
-                property bool moved: false
-
-                function beginDrag() {
-                    moved = false
-                    tile.forceActiveFocus()
-                    ghost.width = tile.width
-                    ghost.height = tile.height
-                    tile.updateGhost()
-                    ghost.visible = true
-                }
-                function dragProgress() {
-                    if (dragArea.drag.active) {
-                        moved = true
-                        tile.updateGhost()
-                    }
-                }
-                function dragEnded() {
-                    ghost.visible = false
-                    const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
-                    const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
-                    const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
-                    const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
-                    tile.x = nx * root.step
-                    tile.y = ny * root.step
-                    model.cx = nx
-                    model.cy = ny
-                    root.saveTiles()
-                }
-                function updateGhost() {
-                    ghost.x = Math.round(tile.x / root.step) * root.step
-                    ghost.y = Math.round(tile.y / root.step) * root.step
-                }
-                function openTileMenu(mouse) {
-                    const p = tile.mapToItem(root, mouse.x, mouse.y)
-                    tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
-                    tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
-                    tileMenu.tileIndex = model.index
-                    tileMenu.open()
-                }
-
                 // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
                 MouseArea {
                     id: dragArea
@@ -397,13 +406,14 @@ Item {
                     id: tileHost
                     anchors.fill: parent
                     anchors.margins: 12   // 全局内容安全区：插件内容不贴边框
-                    source: TileRegistry.source(model.type)
+                    // TileRegistry 判空：退出期 context 属性先于 QML 销毁，避免噪音报错
+                    source: TileRegistry ? TileRegistry.source(model.type) : ""
                     onLoaded: {
                         tileHost.item.api = root.api
                         tileHost.item.cfg = card.cfg
                         // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
                         if ("ds" in tileHost.item)
-                            tileHost.item.ds = Sources.forType(model.type)
+                            tileHost.item.ds = Sources ? Sources.forType(model.type) : null
                     }
                 }
 
@@ -445,14 +455,16 @@ Item {
                 }
             } // card
 
-            // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深
+            // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深。
+            // 远层轻模糊+压暗（保持可辨识），选中层=交互层保持锐利全亮
             MultiEffect {
                 anchors.fill: card
                 source: card
                 visible: tile.blurOn
                 blurEnabled: tile.blurOn
-                blur: Math.min(1, 0.06 + 0.08 * tile.flipDepth)
-                blurMax: 32
+                blur: Math.min(1, 0.04 + 0.05 * tile.flipDepth)
+                blurMax: 16
+                brightness: 1 - Math.min(0.35, 0.06 * tile.flipDepth)
                 autoPaddingEnabled: true
             }
 
@@ -506,6 +518,7 @@ Item {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         property int tileIndex: -1
+        property bool tilePinned: false
 
         background: GlassPanel {}
 
@@ -518,6 +531,21 @@ Item {
                 onClicked: {
                     tileProps.openFor(tileMenu.tileIndex)
                     tileMenu.close()
+                }
+            }
+            GlassButton {
+                id: pinBtn
+                text: (tileMenu.tilePinned ? "✓ " : "") + "永久置顶"
+                opacity: tileMenu.tilePinned ? 1 : 0.75
+                width: parent.width
+                onClicked: {
+                    const i = tileMenu.tileIndex
+                    if (i < 0)
+                        return
+                    tileMenu.tilePinned = !tileMenu.tilePinned
+                    tilesModel.setProperty(i, "pinned", tileMenu.tilePinned)
+                    root.zRevision++
+                    root.saveTiles()
                 }
             }
             GlassButton {
@@ -779,7 +807,7 @@ Item {
             Repeater {
                 model: {
                     const groups = []
-                    const kinds = TileRegistry.kinds()
+                    const kinds = TileRegistry ? TileRegistry.kinds() : []
                     for (let i = 0; i < kinds.length; i++) {
                         const k = kinds[i]
                         let g = null
@@ -1307,6 +1335,19 @@ Item {
             tilesHidden: root.tilesHidden,
             fgMode: root.fgMode
         }))
+    }
+
+    // 调试辅助：--test-menu 合成事件验证右键菜单整条链路
+    function debugTileCenter() {
+        const it = tilesRepeater.itemAt(0)
+        if (!it)
+            return []
+        const p = it.mapToItem(root, it.width / 2, it.height / 2)
+        return [p.x, p.y]
+    }
+    function debugPinBtnCenter() {
+        const p = pinBtn.mapToItem(root, pinBtn.width / 2, pinBtn.height / 2)
+        return [p.x, p.y]
     }
 
     Component.onCompleted: {

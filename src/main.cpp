@@ -1,10 +1,14 @@
 #include <QCommandLineParser>
+#include <QDateTime>
 #include <QDir>
 #include <QFileSystemWatcher>
 #include <QGuiApplication>
+#include <QMouseEvent>
 #include <QQmlContext>
+#include <QQuickItem>
 #include <QQuickView>
 #include <QSurfaceFormat>
+#include <QTimer>
 
 #include <LayerShellQt/Window>
 
@@ -64,6 +68,10 @@ int main(int argc, char *argv[])
         QStringLiteral("dev"),
         QStringLiteral("从源码目录加载 QML，改动即热重载（开发用）"));
     parser.addOption(devOption);
+    const QCommandLineOption testMenuOption(
+        QStringLiteral("test-menu"),
+        QStringLiteral("调试：合成右键打开菜单并点按置顶项，自截两帧验证"));
+    parser.addOption(testMenuOption);
     parser.process(app);
     const bool desktopMode = parser.isSet(desktopOption);
 
@@ -152,6 +160,48 @@ int main(int argc, char *argv[])
     } else {
         view.resize(1280, 800);
         view.show();
+    }
+
+    // --test-menu：向窗口投递真实鼠标事件，验证"右键→菜单→置顶"整条链路
+    if (parser.isSet(testMenuOption)) {
+        // QML 无参函数经 QMetaMethod 调用（invokeMethod 的 char* 重载 Qt 6.11 已不匹配）
+        const auto callQml = [&view](const char *sig) -> QVariant {
+            QVariant ret;
+            QQuickItem *rootItem = view.rootObject();
+            const int idx = rootItem->metaObject()->indexOfMethod(sig);
+            if (idx >= 0)
+                rootItem->metaObject()->method(idx).invoke(rootItem, Q_RETURN_ARG(QVariant, ret));
+            return ret;
+        };
+        const auto click = [&view](const QPointF &p, Qt::MouseButton button) {
+            QMouseEvent press(QEvent::MouseButtonPress, p, p, button, button, Qt::NoModifier);
+            QGuiApplication::sendEvent(&view, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, p, p, button, Qt::NoButton, Qt::NoModifier);
+            QGuiApplication::sendEvent(&view, &release);
+        };
+        QTimer::singleShot(800, &view, [&]() {
+            const QVariantList c = callQml("debugTileCenter()").toList();
+            if (c.size() != 2) {
+                qWarning() << "debugTileCenter 失败";
+                QCoreApplication::quit();
+                return;
+            }
+            click(QPointF(c[0].toReal(), c[1].toReal()), Qt::RightButton);
+            QTimer::singleShot(500, &view, [&]() {
+                view.grabWindow().save(QStringLiteral("/tmp/ruthis-menu.png"));
+                const QVariantList b = callQml("debugPinBtnCenter()").toList();
+                if (b.size() != 2) {
+                    qWarning() << "菜单未打开（debugPinBtnCenter 失败）";
+                    QCoreApplication::quit();
+                    return;
+                }
+                click(QPointF(b[0].toReal(), b[1].toReal()), Qt::LeftButton);
+                QTimer::singleShot(500, &view, [&]() {
+                    view.grabWindow().save(QStringLiteral("/tmp/ruthis-menu2.png"));
+                    QCoreApplication::quit();
+                });
+            });
+        });
     }
     return app.exec();
 }
