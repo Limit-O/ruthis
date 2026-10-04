@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
+import QtQuick.Effects
 
 Item {
     id: root
@@ -220,17 +221,21 @@ Item {
             // 隐藏时全部隐去（含设置磁贴），Ctrl+H 唯一入口
             visible: !root.tilesHidden
 
-            // Z 轴：pinned 恒在最上；翻转模式下按级联深度取渲染序
+            // Z 轴：pinned 恒在最上且不参与翻转（层级巡航不影响置顶，docs/z-axis.md 2.5）；
+            // 常态渲染 z 以最低平面归一——负 z 的磁贴不许沉到壁纸（z=0 前序兄弟）之下
+            readonly property bool isPinned: model.pinned === true
             readonly property int planeIdx: root.planes.indexOf(model.z || 0)
-            readonly property int flipDepth: root.flipMode && root.planes.length > 1
+            readonly property int flipDepth: root.flipMode && !isPinned && root.planes.length > 1
                 ? (planeIdx - root.flipIndex + root.planes.length) % root.planes.length
                 : 0
 
-            z: model.pinned === true ? 1000000
+            z: isPinned ? 1000000
                : root.flipMode ? (root.planes.length - flipDepth) * 100
-               : (model.z || 0)
+               : (model.z || 0) - (root.planes.length ? root.planes[0] : 0)
             scale: root.flipMode ? Math.max(0.72, 1 - 0.07 * flipDepth) : 1
-            opacity: root.flipMode && flipDepth > 0 ? Math.max(0.15, 1 - 0.35 * flipDepth) : 1
+
+            // 翻转时非选中平面用模糊表现纵深（不是消失）
+            readonly property bool blurOn: root.flipMode && flipDepth > 0 && root.planes.length > 1
 
             x: model.cx * root.step + (root.flipMode ? 26 * flipDepth : 0)
             y: model.cy * root.step + (root.flipMode ? 26 * flipDepth : 0)
@@ -250,174 +255,192 @@ Item {
 
             HoverHandler { id: tileHover }
 
-            // 投影：抬升（z>0）或置顶的磁贴有高度感
-            Rectangle {
+            // 卡片内容容器：模糊时整卡交给 MultiEffect 绘制，原体隐藏
+            // （Qt 6.11 实测：QML 自定义 ShaderEffect 静默不渲染，须用内置 MultiEffect）
+            Item {
+                id: card
                 anchors.fill: parent
-                anchors.topMargin: -2
-                anchors.bottomMargin: -8
-                anchors.leftMargin: -4
-                anchors.rightMargin: -4
-                radius: root.tileRadius + 4
-                color: "#4d000000"
-                visible: model.z > 0 || model.pinned === true
-            }
+                visible: !tile.blurOn
 
-            Rectangle {
-                anchors.fill: parent
-                radius: root.tileRadius
-                color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
-                    Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07
-                              : tileHover.hovered ? 0.05 : 0)))
-                border.width: 1
-                border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
-                    Math.min(1, root.tileOpacity * 1.8 + (tileHover.hovered ? 0.2 : 0.12)))
-            }
-            // 顶部内高光：玻璃质感
-            Rectangle {
-                anchors.top: parent.top
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.margins: 1
-                height: parent.height / 2
-                radius: root.tileRadius
-                gradient: Gradient {
-                    GradientStop { position: 0; color: "#12ffffff" }
-                    GradientStop { position: 1; color: "#00ffffff" }
+                // 投影：抬升（z>0）或置顶的磁贴有高度感
+                Rectangle {
+                    anchors.fill: parent
+                    anchors.topMargin: -2
+                    anchors.bottomMargin: -8
+                    anchors.leftMargin: -4
+                    anchors.rightMargin: -4
+                    radius: root.tileRadius + 4
+                    color: "#4d000000"
+                    visible: model.z > 0 || model.pinned === true
                 }
-            }
 
-            // 拖拽共用状态与落格逻辑
-            property bool moved: false
+                Rectangle {
+                    anchors.fill: parent
+                    radius: root.tileRadius
+                    color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
+                        Math.min(1, root.tileOpacity + (dragArea.pressed ? 0.07
+                                  : tileHover.hovered ? 0.05 : 0)))
+                    border.width: 1
+                    border.color: Qt.rgba(root.cardColor.r, root.cardColor.g, root.cardColor.b,
+                        Math.min(1, root.tileOpacity * 1.8 + (tileHover.hovered ? 0.2 : 0.12)))
+                }
+                // 顶部内高光：玻璃质感
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.margins: 1
+                    height: parent.height / 2
+                    radius: root.tileRadius
+                    gradient: Gradient {
+                        GradientStop { position: 0; color: "#12ffffff" }
+                        GradientStop { position: 1; color: "#00ffffff" }
+                    }
+                }
 
-            function beginDrag() {
-                moved = false
-                tile.forceActiveFocus()
-                ghost.width = tile.width
-                ghost.height = tile.height
-                tile.updateGhost()
-                ghost.visible = true
-            }
-            function dragProgress() {
-                if (dragArea.drag.active) {
-                    moved = true
+                // 拖拽共用状态与落格逻辑
+                property bool moved: false
+
+                function beginDrag() {
+                    moved = false
+                    tile.forceActiveFocus()
+                    ghost.width = tile.width
+                    ghost.height = tile.height
                     tile.updateGhost()
+                    ghost.visible = true
                 }
-            }
-            function dragEnded() {
-                ghost.visible = false
-                const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
-                const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
-                const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
-                const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
-                tile.x = nx * root.step
-                tile.y = ny * root.step
-                model.cx = nx
-                model.cy = ny
-                root.saveTiles()
-            }
-            function updateGhost() {
-                ghost.x = Math.round(tile.x / root.step) * root.step
-                ghost.y = Math.round(tile.y / root.step) * root.step
-            }
-            function openTileMenu(mouse) {
-                const p = tile.mapToItem(root, mouse.x, mouse.y)
-                tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
-                tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
-                tileMenu.tileIndex = model.index
-                tileMenu.open()
-            }
-
-            // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
-            // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
-            MouseArea {
-                id: dragArea
-                anchors.fill: parent
-                hoverEnabled: true
-                acceptedButtons: Qt.RightButton
-                cursorShape: dragArea.pressed ? Qt.ClosedHandCursor : Qt.ArrowCursor
-                drag.target: tile
-                drag.threshold: 5
-                drag.minimumX: 0
-                drag.maximumX: root.width - tile.width
-                drag.minimumY: 0
-                drag.maximumY: root.height - tile.height
-
-                onPressed: (mouse) => tile.beginDrag()
-                onPositionChanged: tile.dragProgress()
-                onReleased: tile.dragEnded()
-                onClicked: (mouse) => {
-                    if (!tile.moved)
-                        tile.openTileMenu(mouse)
+                function dragProgress() {
+                    if (dragArea.drag.active) {
+                        moved = true
+                        tile.updateGhost()
+                    }
                 }
-            }
-
-            // 内容宿主：磁贴即插件（tiles/<type>/manifest.json + Tile.qml），
-            // 外壳只负责卡片背景/拖拽/缩放/菜单，内容全部委托给插件组件
-            readonly property var cfg: ({ index: index, type: model.type,
-                text: model.text, glyph: model.glyph, label: model.label,
-                command: model.command, icon: model.icon,
-                opts: (function () {
-                    try { return model.opts ? JSON.parse(model.opts) : {} }
-                    catch (e) { return {} }
-                })() })
-
-            Loader {
-                id: tileHost
-                anchors.fill: parent
-                anchors.margins: 12   // 全局内容安全区：插件内容不贴边框
-                source: TileRegistry.source(model.type)
-                onLoaded: tileHost.item.api = root.api
-            }
-            Binding {
-                target: tileHost.item
-                property: "cfg"
-                value: cfg
-                when: tileHost.status === Loader.Ready
-            }
-            // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
-            Binding {
-                target: tileHost.item
-                property: "ds"
-                value: Sources.forType(model.type)
-                when: tileHost.status === Loader.Ready && tileHost.item !== null
-                      && ("ds" in tileHost.item)
-            }
-
-            // 置顶徽章
-            Rectangle {
-                visible: model.pinned === true
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 4
-                width: 16; height: 16; radius: 8
-                color: "#7fd0ff"
-                Text { anchors.centerIn: parent; text: "顶"; color: "#10141c"; font.pixelSize: 9; font.bold: true }
-            }
-
-            // Super+滚轮：单磁贴沿 Z 微调（按平面边界步进）；其余滚轮放行给内容
-            MouseArea {
-                anchors.fill: parent
-                acceptedButtons: Qt.NoButton
-                onWheel: (wheel) => {
-                    if (!(wheel.modifiers & Qt.MetaModifier) || !AppWindow.active
-                        || model.pinned === true || root.flipMode) {
-                        wheel.accepted = false
-                        return
-                    }
-                    const cur = model.z || 0
-                    let nz
-                    if (wheel.angleDelta.y > 0) {
-                        const next = root.planes.find(function (v) { return v > cur })
-                        nz = next !== undefined ? next : cur + 1
-                    } else {
-                        const prev = root.planes.slice().reverse().find(function (v) { return v < cur })
-                        nz = prev !== undefined ? prev : cur - 1
-                    }
-                    tilesModel.setProperty(index, "z", nz)
-                    root.zRevision++
+                function dragEnded() {
+                    ghost.visible = false
+                    const maxCx = Math.max(0, Math.floor(root.width / root.step) - model.cw)
+                    const maxCy = Math.max(0, Math.floor(root.height / root.step) - model.ch)
+                    const nx = Math.max(0, Math.min(Math.round(tile.x / root.step), maxCx))
+                    const ny = Math.max(0, Math.min(Math.round(tile.y / root.step), maxCy))
+                    tile.x = nx * root.step
+                    tile.y = ny * root.step
+                    model.cx = nx
+                    model.cy = ny
                     root.saveTiles()
-                    wheel.accepted = true
                 }
+                function updateGhost() {
+                    ghost.x = Math.round(tile.x / root.step) * root.step
+                    ghost.y = Math.round(tile.y / root.step) * root.step
+                }
+                function openTileMenu(mouse) {
+                    const p = tile.mapToItem(root, mouse.x, mouse.y)
+                    tileMenu.x = Math.max(4, Math.min(p.x, root.width - tileMenu.width - 4))
+                    tileMenu.y = Math.max(4, Math.min(p.y, root.height - tileMenu.height - 4))
+                    tileMenu.tileIndex = model.index
+                    tileMenu.open()
+                }
+
+                // 拖拽区：右键按住拖动移动磁贴，右键点按弹出菜单；左键完全留给磁贴内容
+                MouseArea {
+                    id: dragArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.RightButton
+                    cursorShape: dragArea.pressed ? Qt.ClosedHandCursor : Qt.ArrowCursor
+                    drag.target: tile
+                    drag.threshold: 5
+                    drag.minimumX: 0
+                    drag.maximumX: root.width - tile.width
+                    drag.minimumY: 0
+                    drag.maximumY: root.height - tile.height
+
+                    onPressed: (mouse) => tile.beginDrag()
+                    onPositionChanged: tile.dragProgress()
+                    onReleased: tile.dragEnded()
+                    onClicked: (mouse) => {
+                        if (!tile.moved)
+                            tile.openTileMenu(mouse)
+                    }
+                }
+
+                // 内容宿主：磁贴即插件（tiles/<type>/manifest.json + Tile.qml），
+                // 外壳只负责卡片背景/拖拽/缩放/菜单，内容全部委托给插件组件
+                readonly property var cfg: ({ index: index, type: model.type,
+                    text: model.text, glyph: model.glyph, label: model.label,
+                    command: model.command, icon: model.icon,
+                    opts: (function () {
+                        try { return model.opts ? JSON.parse(model.opts) : {} }
+                        catch (e) { return {} }
+                    })() })
+
+                Loader {
+                    id: tileHost
+                    anchors.fill: parent
+                    anchors.margins: 12   // 全局内容安全区：插件内容不贴边框
+                    source: TileRegistry.source(model.type)
+                    onLoaded: tileHost.item.api = root.api
+                }
+                Binding {
+                    target: tileHost.item
+                    property: "cfg"
+                    value: cfg
+                    when: tileHost.status === Loader.Ready
+                }
+                // 声明式磁贴（manifest.source）才有 ds 属性，注入前先探测
+                Binding {
+                    target: tileHost.item
+                    property: "ds"
+                    value: Sources.forType(model.type)
+                    when: tileHost.status === Loader.Ready && tileHost.item !== null
+                          && ("ds" in tileHost.item)
+                }
+
+                // 置顶徽章
+                Rectangle {
+                    visible: model.pinned === true
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: 4
+                    width: 16; height: 16; radius: 8
+                    color: "#7fd0ff"
+                    Text { anchors.centerIn: parent; text: "顶"; color: "#10141c"; font.pixelSize: 9; font.bold: true }
+                }
+
+                // Super+滚轮：单磁贴沿 Z 微调（按平面边界步进）；其余滚轮放行给内容
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.NoButton
+                    onWheel: (wheel) => {
+                        if (!(wheel.modifiers & Qt.MetaModifier) || !AppWindow.active
+                            || model.pinned === true || root.flipMode) {
+                            wheel.accepted = false
+                            return
+                        }
+                        const cur = model.z || 0
+                        let nz
+                        if (wheel.angleDelta.y > 0) {
+                            const next = root.planes.find(function (v) { return v > cur })
+                            nz = next !== undefined ? next : cur + 1
+                        } else {
+                            const prev = root.planes.slice().reverse().find(function (v) { return v < cur })
+                            nz = prev !== undefined ? prev : cur - 1
+                        }
+                        tilesModel.setProperty(index, "z", nz)
+                        root.zRevision++
+                        root.saveTiles()
+                        wheel.accepted = true
+                    }
+                }
+            } // card
+
+            // 模糊管线：翻转时非选中平面由 MultiEffect 绘制模糊纹理表现纵深
+            MultiEffect {
+                anchors.fill: card
+                source: card
+                visible: tile.blurOn
+                blurEnabled: tile.blurOn
+                blur: Math.min(1, 0.06 + 0.08 * tile.flipDepth)
+                blurMax: 32
+                autoPaddingEnabled: true
             }
         }
     }
@@ -777,10 +800,11 @@ Item {
                 root.saveTiles()
                 tileProps.openFor(assignIndex)   // 刷新属性面板字段
             } else {
-                const spot = findFreeSpot(1, 1)
+                const tz = topZ()
+                const spot = findFreeSpot(1, 1, tz)
                 if (!spot)
                     return
-                appendTile({ type: "app", cx: spot.cx, cy: spot.cy, cw: 1, ch: 1,
+                appendTile({ type: "app", cx: spot.cx, cy: spot.cy, cw: 1, ch: 1, z: tz,
                     text: "", glyph: "", label: app.name, command: app.exec, icon: app.icon })
                 root.saveTiles()
             }
@@ -1087,6 +1111,7 @@ Item {
         onActivated: {
             root.flipMode = true
             root.flipIndex = root.planes.length - 1
+            flipOverlay.forceActiveFocus()
         }
     }
     Shortcut {
@@ -1105,11 +1130,21 @@ Item {
         id: flipOverlay
         anchors.fill: parent
         visible: root.flipMode
+        onVisibleChanged: if (visible)
+            Store.log("[flip] planes=" + root.planes + " flipIndex=" + root.flipIndex)
         color: "#55000000"
         focus: root.flipMode
         Keys.onReleased: (event) => {
             if (event.key === Qt.Key_Meta || event.key === Qt.Key_Super_L || event.key === Qt.Key_Super_R)
                 root.landFlip()
+        }
+        // Super 仍按住时 Tab 事件带 Meta 修饰，Shortcut("Tab") 匹配不上——循环必须在此按键名处理
+        Keys.onPressed: (event) => {
+            if (event.key !== Qt.Key_Tab)
+                return
+            const dir = (event.modifiers & Qt.ShiftModifier) !== 0 ? -1 : 1
+            root.flipIndex = (root.flipIndex + dir + root.planes.length) % root.planes.length
+            event.accepted = true
         }
         MouseArea { anchors.fill: parent; onClicked: root.cancelFlip() }
         Text {
@@ -1157,17 +1192,30 @@ Item {
         const k = TileRegistry.kind(type)
         if (!k || k.w === undefined)
             return
-        const spot = findFreeSpot(k.w, k.h)
+        const tz = topZ()
+        const spot = findFreeSpot(k.w, k.h, tz)
         if (!spot)
             return
-        appendTile({ type: type, cx: spot.cx, cy: spot.cy, cw: k.w, ch: k.h,
+        appendTile({ type: type, cx: spot.cx, cy: spot.cy, cw: k.w, ch: k.h, z: tz,
             text: type === "note" ? "新便签" : "", glyph: "", label: k.name, command: "", icon: "" })
         root.saveTiles()
         addPopup.close()
     }
 
-    // 在网格上找第一块能放下 w×h 的空地
-    function findFreeSpot(w, h) {
+    // 当前最上层非 pinned 磁贴的 z——新磁贴落位于此平面（docs/z-axis.md §3/§5.5）
+    function topZ() {
+        let mz = 0
+        for (let i = 0; i < tilesModel.count; i++) {
+            const t = tilesModel.get(i)
+            if (t.pinned !== true && (t.z || 0) > mz)
+                mz = t.z || 0
+        }
+        return mz
+    }
+
+    // 在网格上为 w×h 磁贴找落点。同层互斥（docs/z-axis.md §3/§5.3）：
+    // 只统计 targetZ 同带与 pinned 的占用，跨层重叠合法
+    function findFreeSpot(w, h, targetZ) {
         const cols = Math.floor(root.width / root.step)
         const rows = Math.floor(root.height / root.step)
         for (let cy = 0; cy <= rows - h; cy++) {
@@ -1175,6 +1223,8 @@ Item {
                 let free = true
                 for (let i = 0; i < tilesModel.count; i++) {
                     const t = tilesModel.get(i)
+                    if (t.pinned !== true && (t.z || 0) !== targetZ)
+                        continue
                     if (cx < t.cx + t.cw && t.cx < cx + w &&
                         cy < t.cy + t.ch && t.cy < cy + h) {
                         free = false
@@ -1233,9 +1283,10 @@ Item {
 
         // 旧布局里没有后台磁贴的，自动补一块
         if (!defs.some(function (t) { return t.type === "tasks" })) {
-            const spot = findFreeSpot(2, 3)
+            const tz = topZ()
+            const spot = findFreeSpot(2, 3, tz)
             if (spot)
-                appendTile({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3,
+                appendTile({ type: "tasks", cx: spot.cx, cy: spot.cy, cw: 2, ch: 3, z: tz,
                     text: "", glyph: "", label: "", command: "", icon: "" })
         }
 
@@ -1249,6 +1300,13 @@ Item {
         // 调试用：--open-add 弹出添加磁贴面板（验证分类与图标）
         if (Qt.application.arguments.indexOf("--open-add") !== -1) {
             addPopup.open()
+            Store.grabWindow(AppWindow)
+        }
+        // 调试用：--open-flip 强制进入图层翻转模式（验证模糊级联）
+        if (Qt.application.arguments.indexOf("--open-flip") !== -1 && root.planes.length > 1) {
+            root.flipMode = true
+            root.flipIndex = root.planes.length - 1
+            flipOverlay.forceActiveFocus()
             Store.grabWindow(AppWindow)
         }
     }

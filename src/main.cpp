@@ -45,6 +45,10 @@ int main(int argc, char *argv[])
         QStringLiteral("open-add"),
         QStringLiteral("启动时打开添加磁贴面板（调试用）"));
     parser.addOption(openAddOption);
+    const QCommandLineOption openFlipOption(
+        QStringLiteral("open-flip"),
+        QStringLiteral("启动时进入图层翻转模式（调试用）"));
+    parser.addOption(openFlipOption);
     const QCommandLineOption devOption(
         QStringLiteral("dev"),
         QStringLiteral("从源码目录加载 QML，改动即热重载（开发用）"));
