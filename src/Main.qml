@@ -488,7 +488,7 @@ Item {
             visible: box !== null
             z: (root.planes.length - depth) * 100 - 1
             radius: root.tileRadius + 8
-            color: Qt.hsla((index * 0.61803398875) % 1, 0.55, 0.5, selected ? 0.16 : 0.08)
+            color: Qt.hsla((index * 0.61803398875) % 1, 0.55, 0.5, selected ? 0.32 : 0.20)
             border.width: selected ? 3 : 2
             border.color: root.planeColor(index, selected)
 
