@@ -25,6 +25,14 @@ Item {
     Component.onCompleted: refresh()
     onApiChanged: refresh()
 
+    // 组件私有设置：opts 缺省时全部显示
+    function optOn(key) {
+        const v = tile.cfg && tile.cfg.opts ? tile.cfg.opts[key] : undefined
+        if (v === undefined)
+            return true
+        return v === "开" || v === true
+    }
+
     Column {
         anchors.verticalCenter: parent.verticalCenter
         anchors.left: parent.left
@@ -38,14 +46,17 @@ Item {
             color: tile.fg; font.pixelSize: 16; font.weight: Font.Medium
         }
         Text {
+            visible: tile.optOn("showCpu")
             text: tile.cpuMemStr
             color: tile.fg; opacity: 0.85; font.pixelSize: 13
         }
         Text {
+            visible: tile.optOn("showNet")
             text: tile.netStr
             color: tile.fg; opacity: 0.85; font.pixelSize: 13
         }
         Text {
+            visible: tile.optOn("showDisk")
             text: tile.diskStr
             color: tile.fg; opacity: 0.85; font.pixelSize: 13
         }

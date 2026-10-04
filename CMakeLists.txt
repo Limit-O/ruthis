@@ -25,11 +25,9 @@ qt_add_executable(ruthis
 qt_add_resources(ruthis "qml" PREFIX "/" FILES src/Main.qml)
 qt_add_resources(ruthis "kwin" PREFIX "/" FILES kwin/kwin-windows.js)
 
-# 磁贴即插件：tiles/<type>/manifest.json + Tile.qml，编译期嵌入
-file(GLOB TILE_PLUGIN_FILES CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}
-    tiles/*/manifest.json
-    tiles/*/Tile.qml)
-qt_add_resources(ruthis "tiles" PREFIX "/" FILES ${TILE_PLUGIN_FILES})
+# 磁贴即插件：官方磁贴不编入二进制，与第三方磁贴同一机制（安装到磁贴目录，
+# 见 scripts/install-tiles.sh 与 docs/tiles.md）。仅通用声明式渲染器属于外壳。
+qt_add_resources(ruthis "tiles-generic" PREFIX "/" FILES tiles/_generic/Tile.qml)
 
 # kenney CC0 图标包随仓库分发，编译期嵌入二进制（assets/kenney/{White,Black}/*.png）
 file(GLOB KENNEY_ICONS CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}

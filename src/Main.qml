@@ -302,6 +302,7 @@ Item {
             Loader {
                 id: tileHost
                 anchors.fill: parent
+                anchors.margins: 12   // 全局内容安全区：插件内容不贴边框
                 source: TileRegistry.source(model.type)
                 onLoaded: tileHost.item.api = root.api
             }
@@ -522,6 +523,20 @@ Item {
                                 opacity: tileProps.currentOpts[propEntry.modelData.key] === modelData ? 1 : 0.55
                                 onClicked: tileProps.setOpt(propEntry.modelData.key, modelData)
                             }
+                        }
+                    }
+
+                    Row {
+                        visible: propEntry.modelData.type === "toggle"
+                        GlassButton {
+                            property bool on: {
+                                const v = tileProps.currentOpts[propEntry.modelData.key]
+                                return v !== undefined ? (v === "开" || v === true)
+                                                       : propEntry.modelData.default === "开"
+                            }
+                            text: (on ? "✓ " : "") + propEntry.modelData.name
+                            opacity: on ? 1 : 0.55
+                            onClicked: tileProps.setOpt(propEntry.modelData.key, on ? "关" : "开")
                         }
                     }
                 }

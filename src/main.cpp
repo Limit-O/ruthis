@@ -68,6 +68,10 @@ int main(int argc, char *argv[])
     MediaInfo mediaInfo;
     AudioInfo audioInfo;
     TileRegistry tileRegistry;
+    // --dev 时把源码磁贴目录加进搜索路径（优先于用户目录），改完即热重载
+    if (parser.isSet(devOption))
+        tileRegistry.addSearchDir(QStringLiteral(RUTHIS_SOURCE_DIR)
+                                  + QStringLiteral("/tiles"));
     TileSources tileSources(&tileRegistry);
     view.rootContext()->setContextProperty(QStringLiteral("Launcher"), &launcher);
     view.rootContext()->setContextProperty(QStringLiteral("Store"), &store);

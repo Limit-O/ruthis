@@ -6,5 +6,25 @@
     2
   ],
   "icon": "barsVertical",
-  "api": 1
+  "api": 1,
+  "props": [
+    {
+      "key": "showCpu",
+      "name": "CPU / 内存",
+      "type": "toggle",
+      "default": "开"
+    },
+    {
+      "key": "showNet",
+      "name": "网速",
+      "type": "toggle",
+      "default": "开"
+    },
+    {
+      "key": "showDisk",
+      "name": "磁盘",
+      "type": "toggle",
+      "default": "开"
+    }
+  ]
 }
